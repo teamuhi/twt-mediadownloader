@@ -49,3 +49,8 @@ Plan: `C:\Users\timoT\.claude\plans\plan-this-task-to-delegated-parnas.md`.
 - Popup: strip shows quoted items with a "QT" badge, "Quote" checkbox (only when the tweet has a quote), live preview has a quote box; `defaultTitle()` mirrors the host naming.
 - Plain reposts (retweets) have no URL of their own (X copies the original's link), so nothing to detect; documented in the README.
 - Verified: quote with quoted video (no own media), quote with own video + 2 photos + text-only quote (video MP4 and photo-grid PNG), quote hidden, media-only from quoted video; regression on non-quote cards/media. Not yet rebuilt into the installer (needs rebuild + re-sign at 0.6.1, see previous section).
+
+## GitHub Release v0.6.0 -- PUBLISHED
+- https://github.com/teamuhi/twt-mediadownloader/releases/tag/v0.6.0, tag on commit 16d25d156 (the 0.6.0 source the built artifacts match). Assets: `twtdl-extension-setup.exe`, `twtdl-extension.crx`, `update.xml` (fixed names; installer URLs use `releases/latest/download/`).
+- Made with the GitHub REST API using the git-stored credential (`gh` is not installed on this PC). Release notes and commit carry no Claude attribution, per the user.
+- v0.6.1 features (per-tab download folders, quote-post cards) are in master but NOT in this release: still need host rebuild, AMO re-sign at 0.6.1, `build-chromium.ps1 -Pack`, recompile `setup.iss`, then a new v0.6.1 release.
