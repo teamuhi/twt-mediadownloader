@@ -1,6 +1,6 @@
 {
   "name": "com.twtdl.twtdl_extension",
-  "description": "Native host for the twtdl Downloader Firefox extension",
+  "description": "Native host for the nickel.tools Firefox extension",
   "path": "__HOST_EXE_PATH__",
   "type": "stdio",
   "allowed_extensions": ["twtdl-extension@local"]

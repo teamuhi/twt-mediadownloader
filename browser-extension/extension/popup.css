@@ -64,15 +64,25 @@ body {
   background: var(--canvas);
   /* Fixed px width (no 100vw): browsers size the popup from this, and a vw-based cap
      collapses it to a sliver when the popup opens with a not-yet-laid-out viewport. */
-  width: 360px;
-  min-width: 360px;
+  width: 480px;
+  min-width: 480px;
   margin: 0;
   transition: background-color var(--duration-base) ease, color var(--duration-base) ease;
 }
 
-body[data-tab="twitter"] {
-  width: 480px;
-  min-width: 480px;
+/* Pop-out window: sized by the window, not the popup rules. */
+body.is-detached {
+  width: auto;
+  min-width: 0;
+}
+
+body.is-detached #app {
+  max-height: none;
+  min-height: 100vh;
+}
+
+body.is-detached #popout-btn {
+  display: none;
 }
 
 #app {
@@ -156,6 +166,21 @@ header {
   padding: 0 var(--s2) var(--s2);
   cursor: pointer;
   transition: color var(--duration-base) ease;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Reserve the semibold width so selecting a tab never shifts its siblings. */
+.nav-tabs button::before {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .nav-tabs button::after {
@@ -956,6 +981,7 @@ video.hero-media {
 
   .nav-tabs button::after,
   .switch::after,
+  .web-cell,
   .ico {
     transition: none;
   }
@@ -1676,8 +1702,7 @@ video.hero-media {
 
 /* Touch devices (Firefox Android opens the popup full-screen): bigger targets, fluid width. */
 @media (pointer: coarse) {
-  body,
-  body[data-tab="twitter"] {
+  body {
     width: auto;
     min-width: 0;
     font-size: 14px;
@@ -1802,4 +1827,157 @@ video.hero-media {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+/* ---------------------------------------------------------------- Web tab */
+
+.web-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+
+.web-toolbar .seg {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.web-toolbar .seg button {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+
+.web-selectall {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.web-selectall input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.web-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--s2);
+  max-height: 340px;
+  margin-bottom: var(--s3);
+  padding: 2px;
+  overflow-y: auto;
+}
+
+.web-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: 2px solid transparent;
+  outline-offset: -1px;
+  cursor: pointer;
+  transition: outline-color var(--duration-base) ease, border-color var(--duration-base) ease;
+}
+
+.web-cell:hover {
+  border-color: var(--border-strong);
+}
+
+.web-cell.is-checked {
+  outline-color: var(--accent);
+}
+
+.web-cell input {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.web-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  background: var(--surface-2);
+}
+
+.web-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.web-glyph {
+  font-size: var(--fs-lg);
+  color: var(--text-muted);
+}
+
+.web-thumb img + .web-glyph {
+  position: relative;
+  padding: 2px 6px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+}
+
+.web-thumb img + .web-glyph:empty {
+  display: none;
+}
+
+.web-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s1);
+  padding: 4px 6px 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.web-kind {
+  text-transform: capitalize;
+}
+
+.web-name {
+  padding: 0 6px 5px;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 340px) {
+  .web-grid {
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  }
+}
+
+@media (pointer: coarse) {
+  .web-grid {
+    max-height: none;
+  }
+
+  .web-cell input {
+    width: 22px;
+    height: 22px;
+  }
 }

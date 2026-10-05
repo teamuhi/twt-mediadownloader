@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "twtdl Downloader",
-  "description": "Download Twitter/X media (video, GIF, photo), tweet cards, and YouTube video/audio, via a native messaging host running yt-dlp.",
+  "name": "nickel.tools",
+  "description": "Download Twitter/X media (video, GIF, photo), tweet cards, YouTube video/audio, and images, video and audio from any website, via a native messaging host running yt-dlp.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp9xs6lYY/Kh9aZSbeNIS8WHZ3TA0zWjKSwbfijlyvLXYOcLAidlZyyWCZpT1z1ovxCPHB5YtQCrYWPGmx48O6kJzCqIeJw15O4PmGcSYcmkY+PYMQpW26n7pOClIDRBoO1aEgjypLJJpUiQvvPAtDxItFpK8j5uUXmTI90IyHPp0Yi8L9p44o1d+hy3pezjIebEwsSTFaUnN581bqhPX9/GwVsdxsM/gxKeWHrua4zpE2SJMUZYnkC7Pf4xBUrz7rz8R60x2kL0hZwB9rXmiO+gb7vyxwsxo2egt5HaJMFOeQz2T48VMh7njMeAFhoxM/qmfOvfqG2CgBCJvYwZQzQIDAQAB",
   "permissions": [
     "activeTab",
     "notifications",
     "nativeMessaging",
     "storage",
-    "cookies"
+    "cookies",
+    "scripting"
   ],
   "host_permissions": [
     "*://*.x.com/*",

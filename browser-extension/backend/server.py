@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
-"""Local HTTP backend for the twtdl browser extension (dev/test use).
+"""Local HTTP backend for the nickel.tools browser extension (dev/test use).
 
 This is the fast local dev loop: curl-testable, no registry/native-messaging
 setup needed. The packaged extension talks to native-host/host.py instead,
@@ -120,7 +120,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': str(e)})
                 return
             except Exception as e:
-                self._send_json(502, errors.classify_error(e))
+                self._send_json(502, errors.classify_error(e, 'youtube'))
                 return
             self._send_json(200, info)
             return
@@ -130,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self._send_json(200, core.get_tweet_info(url))
             except Exception as e:
-                self._send_json(502, errors.classify_error(e))
+                self._send_json(502, errors.classify_error(e, 'twitter'))
             return
 
         if parsed.path == '/status':
@@ -192,7 +192,7 @@ def main():
     core.ensure_download_dir()
     token = get_or_create_token()
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
-    print('twtdl extension backend')
+    print('nickel.tools extension backend')
     print('  listening on http://127.0.0.1:%d' % port)
     print('  downloads saved to %s' % core.get_download_dir())
     print('  auth token (paste into the extension options page): %s' % token)
