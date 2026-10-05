@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "twtdl Downloader",
   "description": "Download Twitter/X media (video, GIF, photo), tweet cards, and YouTube video/audio, via a native messaging host running yt-dlp.",
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoUUvED/ibFXxaVZY4W5AGp1CB89SrQhUMUeZvIyiBFBezcNmpPYZymeN7luxwIuJZBahnuI9uehv8cd0s6uMyOeOL7nzMf38d9fmg/giWJJUPrtumh2K16UhXi7tdG5J3JjeorOyciCFYi92vz/sC6A8pxYqx7DIjG+tCDwq2i/MRShfsg0lsldY1O79v443eCSCfRnuPGfJm7GCdXSz8nxcWTg9upH/QfDA9HKBTXc19UnwqD89rJpss4xyg//BVYLO2odRgEWlJW2o7E5zjcXNgKObsc4P1zPvrX4pFCmqwBz9dMXf8nqysDzYhwE9v8Tt2u4cmGLSza9E8B9TcQIDAQAB",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp9xs6lYY/Kh9aZSbeNIS8WHZ3TA0zWjKSwbfijlyvLXYOcLAidlZyyWCZpT1z1ovxCPHB5YtQCrYWPGmx48O6kJzCqIeJw15O4PmGcSYcmkY+PYMQpW26n7pOClIDRBoO1aEgjypLJJpUiQvvPAtDxItFpK8j5uUXmTI90IyHPp0Yi8L9p44o1d+hy3pezjIebEwsSTFaUnN581bqhPX9/GwVsdxsM/gxKeWHrua4zpE2SJMUZYnkC7Pf4xBUrz7rz8R60x2kL0hZwB9rXmiO+gb7vyxwsxo2egt5HaJMFOeQz2T48VMh7njMeAFhoxM/qmfOvfqG2CgBCJvYwZQzQIDAQAB",
   "permissions": [
     "activeTab",
     "notifications",

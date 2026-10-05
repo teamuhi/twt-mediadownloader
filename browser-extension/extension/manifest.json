@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "twtdl Downloader",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Download Twitter/X media (video, GIF, photo), tweet cards, and YouTube video/audio, via a native messaging host running yt-dlp.",
   "browser_specific_settings": {
     "gecko": {

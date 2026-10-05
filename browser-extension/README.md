@@ -17,7 +17,7 @@ supports Firefox, Chrome, Edge, and Brave.
    and will prompt you to close it if you forget; closing the Chromium
    browsers first just avoids needing to restart them afterward.
 2. Download `twtdl-extension-setup.exe` from the
-   [latest release](https://github.com/twtdl/twtdl-extension/releases/latest).
+   [latest release](https://github.com/teamuhi/twt-mediadownloader/releases/latest).
 3. Run it. Windows will show a SmartScreen warning ("Windows protected your
    PC") because the installer isn't code-signed; click "More info", then
    "Run anyway". This is expected, not a sign of anything wrong; see
@@ -133,9 +133,11 @@ By default the finished file lands in `Downloads\twtdl-extension\` in
 your user folder. Click the gear icon in the popup to set a different
 default location -- click **Browse…** to pick a folder instead of typing a
 path (a native OS folder picker, since a real filesystem path isn't
-something a web page can normally obtain). To save just one download
-somewhere else without changing your default, click the small folder icon
-next to the Download button instead.
+something a web page can normally obtain). The YouTube and Twitter tabs
+each have their own location; until you set one for Twitter it simply uses
+the YouTube one. To save just one download somewhere else without changing
+either default, click the small folder icon next to the Download button
+instead (the picker opens at the active tab's folder).
 
 If a file with the resulting name already exists (re-downloading the same
 video, or two videos ending up with the same name), the saved file gets
@@ -162,6 +164,16 @@ items shows a thumbnail strip to pick which one to download.
   badge, in a **light or dark card theme** (independent of the popup's
   theme). A video or GIF tweet becomes an MP4 with the card around the
   video; a photo tweet becomes a PNG (up to four photos in a grid).
+
+A **quote post** (a tweet that embeds another tweet) is rendered the way X
+shows it: the quoting tweet, then the quoted tweet in a bordered box with its
+own avatar, name, text and media (a **Quote** checkbox turns that off). The
+quoted post's media also appears in the thumbnail strip, marked **QT**, and
+can be downloaded or turned into a GIF like any other. Whichever video you
+select plays in its own spot in the card, and the other post's media is shown
+as a still. A plain *repost* has no link of its own (copying its link gives
+the original post's URL), so a copied repost link produces the card of the
+original post.
 
 Sensitive or protected tweets need a logged-in account. With **Use my x.com
 login** on (settings, on by default) the extension reads your browser's

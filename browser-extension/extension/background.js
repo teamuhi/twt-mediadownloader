@@ -188,6 +188,6 @@ browser.runtime.onMessage.addListener((message) => {
   }
 
   if (message.type === 'browseFolder') {
-    return sendRequest({ type: 'browseFolder', requestId: newRequestId() }).catch(failure);
+    return sendRequest({ type: 'browseFolder', requestId: newRequestId(), source: message.source }).catch(failure);
   }
 });

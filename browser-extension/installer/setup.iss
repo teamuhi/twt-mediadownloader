@@ -27,9 +27,9 @@
 ; silently not taking effect until some later, easy-to-miss restart.
 
 #define MyAppName "twtdl Downloader"
-#define MyAppVersion "0.6.0"
+#define MyAppVersion "0.6.1"
 #define MyAppPublisher "twtdl"
-#define MyAppURL "https://github.com/twtdl/twtdl-extension"
+#define MyAppURL "https://github.com/teamuhi/twt-mediadownloader"
 #define NativeHostName "com.twtdl.twtdl_extension"
 #define ExtensionId "twtdl-extension@local"
 #define HostDistDir "..\native-host\dist\host"
@@ -42,8 +42,8 @@
 ; update manifest. ChromiumExtensionId is derived from, and must always
 ; match, the "key" field in extension-chromium/manifest.json -- both come
 ; from signing/chromium-key.pem (gitignored; see native-host/README.md).
-#define ChromiumExtensionId "nbackfaldpbdofonhfkmhdjojfopmepk"
-#define UpdateManifestURL "https://github.com/twtdl/twtdl-extension/releases/latest/download/update.xml"
+#define ChromiumExtensionId "lnpcggkomlddjkfpkbamcjkdkpnheejm"
+#define UpdateManifestURL "https://github.com/teamuhi/twt-mediadownloader/releases/latest/download/update.xml"
 
 [Setup]
 AppId={{B36F1F3E-6B0C-4B8E-9B1A-9C6F6F6B6C31}

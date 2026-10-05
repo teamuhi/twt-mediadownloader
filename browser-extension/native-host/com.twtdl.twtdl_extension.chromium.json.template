@@ -3,5 +3,5 @@
   "description": "Native host for the twtdl Downloader extension",
   "path": "__HOST_EXE_PATH__",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://nbackfaldpbdofonhfkmhdjojfopmepk/"]
+  "allowed_origins": ["chrome-extension://lnpcggkomlddjkfpkbamcjkdkpnheejm/"]
 }

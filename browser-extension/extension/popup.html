@@ -37,10 +37,15 @@
     </header>
 
     <div id="settings-panel" class="hidden">
-      <label for="download-dir">Download location</label>
+      <label for="download-dir">YouTube download location</label>
       <div class="dir-row">
         <input type="text" id="download-dir" placeholder="C:\Users\you\Downloads\twtdl-extension">
-        <button id="browse-dir" type="button">Browse…</button>
+        <button id="browse-dir" class="browse-btn" type="button">Browse…</button>
+      </div>
+      <label for="twitter-dir">Twitter download location</label>
+      <div class="dir-row">
+        <input type="text" id="twitter-dir" placeholder="Same as YouTube unless set">
+        <button id="browse-twitter-dir" class="browse-btn" type="button">Browse…</button>
       </div>
       <div class="settings-row">
         <button id="save-settings" type="button" disabled>Save</button>
@@ -144,6 +149,7 @@
               <label class="check"><input type="checkbox" id="tw-show-text" checked><span>Text</span></label>
               <label class="check"><input type="checkbox" id="tw-show-date" checked><span>Date</span></label>
               <label class="check"><input type="checkbox" id="tw-show-verified" checked><span>Verified</span></label>
+              <label class="check hidden" id="tw-show-quote-label"><input type="checkbox" id="tw-show-quote" checked><span>Quote</span></label>
             </div>
             <div id="tw-card" class="tw-card" data-card-theme="light">
               <div class="card-head">
@@ -155,6 +161,14 @@
               </div>
               <p id="card-text" class="card-text"></p>
               <img id="card-media" class="card-media hidden" alt="">
+              <div id="card-quote" class="card-quote hidden">
+                <div class="card-head">
+                  <img id="quote-avatar" alt="">
+                  <div class="card-qname"><span id="quote-name"></span><span id="quote-handle" class="card-handle"></span></div>
+                </div>
+                <p id="quote-text" class="card-text"></p>
+                <img id="quote-media" class="card-media hidden" alt="">
+              </div>
               <div id="card-date" class="card-date"></div>
             </div>
             <div class="hint" id="tw-card-out"></div>

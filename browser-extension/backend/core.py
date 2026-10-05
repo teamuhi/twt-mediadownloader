@@ -55,23 +55,29 @@ def save_config(config):
         json.dump(config, f)
 
 
-def get_download_dir():
-    return load_config().get('download_dir') or DEFAULT_DOWNLOAD_DIR
+CONFIG_DIR_KEYS = {'youtube': 'download_dir', 'twitter': 'twitter_download_dir'}
 
 
-def set_download_dir(path):
+def get_download_dir(source='youtube'):
+    """Save location for `source` ('youtube' or 'twitter'). An unset Twitter
+    location follows the general one, so existing setups keep working."""
+    config = load_config()
+    return config.get(CONFIG_DIR_KEYS.get(source)) or config.get('download_dir') or DEFAULT_DOWNLOAD_DIR
+
+
+def set_download_dir(path, source='youtube'):
     """Validates `path` (or clears the override if falsy) and persists it."""
     if path:
         path = os.path.expanduser(path)
         os.makedirs(path, exist_ok=True)
     config = load_config()
-    config['download_dir'] = path or None
+    config[CONFIG_DIR_KEYS[source]] = path or None
     save_config(config)
-    return get_download_dir()
+    return get_download_dir(source)
 
 
-def ensure_download_dir(download_dir=None):
-    d = download_dir or get_download_dir()
+def ensure_download_dir(download_dir=None, source='youtube'):
+    d = download_dir or get_download_dir(source)
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -341,14 +347,15 @@ def validate_twitter_request(url, options):
     return {
         'kind': kind,
         'format': fmt,
-        'mediaIndex': int(_num(options.get('mediaIndex'), 0, 0, 3)),
+        'mediaIndex': int(_num(options.get('mediaIndex'), 0, 0, 15)),
         'quality': options.get('quality'),
         'gif': {'fps': int(_num(gif.get('fps'), 15, 5, 30)), 'speed': _num(gif.get('speed'), 1.0, 0.25, 4.0),
                 'width': width, 'start': start, 'end': end},
         'card': {'theme': 'dark' if card.get('theme') == 'dark' else 'light',
                  'showText': card.get('showText', True) is not False,
                  'showDate': card.get('showDate', True) is not False,
-                 'showVerified': card.get('showVerified', True) is not False},
+                 'showVerified': card.get('showVerified', True) is not False,
+                 'showQuote': card.get('showQuote', True) is not False},
     }
 
 
@@ -392,16 +399,30 @@ def _download_video(tweet, item, quality, tmp, cookiefile, on_progress):
     raise ValueError('No video could be found in this tweet')
 
 
-def _fetch_avatar(tweet, tmp):
-    url = tweet['author'].get('avatarUrl')
+def _fetch_avatar(author, tmp, name):
+    url = author.get('avatarUrl')
     if not url:
         return None
-    path = os.path.join(tmp, 'avatar')
+    path = os.path.join(tmp, name)
     try:
         twitter.download_file(url, path)
         return path
     except Exception:
         return None  # card falls back to an initial-letter placeholder
+
+
+def _card_images(items, tmp, tag):
+    """Local image files for up to four media items (photos at original
+    quality, videos/GIFs as their poster frame) for static card media."""
+    paths = []
+    for n, m in enumerate(items[:4]):
+        path = os.path.join(tmp, '%s-%d' % (tag, n))
+        if m['type'] == 'photo':
+            twitter.download_photo(m['photoUrl'], path)
+        else:
+            twitter.download_file(m['thumbnail'], path)
+        paths.append(path)
+    return paths
 
 
 def _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile):
@@ -418,8 +439,11 @@ def _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile
 
     if kind == 'media':
         twitter.require_media(tweet)
-        if len(media) > 1:
-            base += '_%d' % (index + 1)
+        source = tweet['quoted'] if item['from'] == 'quoted' and tweet.get('quoted') else tweet
+        base = '%s_%s' % (source['author']['handle'] or 'tweet', source['tweetId'])
+        group = [m for m in media if m['from'] == item['from']]
+        if len(group) > 1:
+            base += '_%d' % (group.index(item) + 1)
         if item['type'] == 'photo':
             out = os.path.join(tmp, 'photo')
             twitter.download_photo(item['photoUrl'], out)
@@ -433,24 +457,32 @@ def _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile
             return out, 'gif', base
         return video, 'mp4', base
 
-    # Tweet card
+    # Tweet card. A quote post also draws the quoted tweet inside the card;
+    # the selected media decides which box plays the video (or, for a photo or
+    # a text-only tweet, the card is a static PNG with all media as images).
     opts = options['card']
-    avatar = _fetch_avatar(tweet, tmp)
+    quoted = tweet.get('quoted') if opts['showQuote'] else None
+    avatar = _fetch_avatar(tweet['author'], tmp, 'avatar')
+    quote_avatar = _fetch_avatar(quoted['author'], tmp, 'quote-avatar') if quoted else None
     base += '_card'
+    own_items = [m for m in media if m['from'] == 'own']
+    quote_items = [m for m in media if m['from'] == 'quoted'] if quoted else []
     if item and item['type'] != 'photo':
         video = _download_video(tweet, item, options['quality'], tmp, cookiefile, on_progress)
+        target = 'quote' if item['from'] == 'quoted' and quoted else 'own'
         aspect = item['width'] / item['height'] if item.get('width') and item.get('height') else None
         out = os.path.join(tmp, 'card.mp4')
-        render.render_card_video(tweet, video, opts, out, tmp, avatar, aspect, item.get('duration'), on_progress, ffmpeg_location)
+        render.render_card_video(
+            tweet, video, target, opts, out, tmp, avatar, quote_avatar,
+            _card_images(own_items if target == 'quote' else [], tmp, 'own'),
+            _card_images(quote_items if target == 'own' else [], tmp, 'quote'),
+            aspect, item.get('duration'), on_progress, ffmpeg_location)
         return out, 'mp4', base
-    photos = []
-    for n, m in enumerate([m for m in media if m['type'] == 'photo'][:4]):
-        path = os.path.join(tmp, 'photo-%d' % n)
-        twitter.download_photo(m['photoUrl'], path)
-        photos.append(path)
+    own_paths = _card_images(own_items, tmp, 'own')
+    quote_paths = _card_images(quote_items, tmp, 'quote')
     on_progress(status='rendering', percent=50)
     out = os.path.join(tmp, 'card.png')
-    render.render_card_png(tweet, photos, opts, out, avatar)
+    render.render_card_png(tweet, own_paths, quote_paths, opts, out, avatar, quote_avatar)
     return out, 'png', base
 
 
@@ -460,7 +492,7 @@ def run_twitter_download(url, options, on_progress, ffmpeg_location=None, downlo
     tmp = None
     try:
         options = validate_twitter_request(url, options)
-        target_dir = ensure_download_dir(download_dir)
+        target_dir = ensure_download_dir(download_dir, 'twitter')
         tmp = make_job_tmp()
         with twitter.cookie_file(cookies) as cookiefile:
             out, ext, default_title = _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile)

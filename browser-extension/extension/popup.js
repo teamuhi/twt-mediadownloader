@@ -198,7 +198,7 @@ function startDownload(downloadDir) {
 
 function startDownloadTo() {
   downloadToBtn.disabled = true;
-  send({ type: 'browseFolder' })
+  send({ type: 'browseFolder', source: activeTab })
     .then((res) => {
       syncActions();
       if (res && res.path) startDownload(res.path);
@@ -300,29 +300,44 @@ panels.youtube = {
 const settingsToggleBtn = $('settings-toggle');
 const settingsPanel = $('settings-panel');
 const mainEl = $('main');
-const downloadDirInput = $('download-dir');
-const browseDirBtn = $('browse-dir');
 const saveSettingsBtn = $('save-settings');
 const settingsStatusEl = $('settings-status');
 const useXLoginEl = $('use-x-login');
 
-let loadedDownloadDir = '';
+// One save location per tab. `key` is the field name in the host's config
+// messages; `loaded` is the last value the host reported, so Save is only
+// enabled for edited fields and only those are sent (an untouched Twitter
+// field that is inheriting the YouTube path must not get pinned to it).
+const dirFields = {
+  youtube: { input: $('download-dir'), browse: $('browse-dir'), key: 'downloadDir', loaded: '' },
+  twitter: { input: $('twitter-dir'), browse: $('browse-twitter-dir'), key: 'twitterDownloadDir', loaded: '' },
+};
 
 function setSettingsStatus(text) {
   settingsStatusEl.textContent = text;
 }
 
+function isDirDirty(field) {
+  return field.input.value.trim() !== field.loaded;
+}
+
 function updateSaveButtonState() {
-  saveSettingsBtn.disabled = downloadDirInput.value.trim() === loadedDownloadDir;
+  saveSettingsBtn.disabled = !Object.values(dirFields).some(isDirDirty);
+}
+
+function applyConfig(res) {
+  for (const field of Object.values(dirFields)) {
+    field.loaded = res[field.key] || '';
+    field.input.value = field.loaded;
+  }
+  updateSaveButtonState();
 }
 
 function loadSettings() {
   setSettingsStatus('Loading…');
   send({ type: 'getConfig' })
     .then((res) => {
-      loadedDownloadDir = res.downloadDir || '';
-      downloadDirInput.value = loadedDownloadDir;
-      updateSaveButtonState();
+      applyConfig(res);
       setSettingsStatus('');
     })
     .catch((err) => {
@@ -334,12 +349,14 @@ function loadSettings() {
 }
 
 function saveSettings() {
+  const config = {};
+  for (const field of Object.values(dirFields)) {
+    if (isDirDirty(field)) config[field.key] = field.input.value.trim();
+  }
   setSettingsStatus('Saving…');
-  send({ type: 'setConfig', config: { downloadDir: downloadDirInput.value.trim() } })
+  send({ type: 'setConfig', config })
     .then((res) => {
-      loadedDownloadDir = res.downloadDir || '';
-      downloadDirInput.value = loadedDownloadDir;
-      updateSaveButtonState();
+      applyConfig(res);
       setSettingsStatus('Saved');
       setTimeout(() => setSettingsStatus(''), 1500);
     })
@@ -348,7 +365,7 @@ function saveSettings() {
     });
 }
 
-downloadDirInput.addEventListener('input', updateSaveButtonState);
+Object.values(dirFields).forEach((field) => field.input.addEventListener('input', updateSaveButtonState));
 useXLoginEl.addEventListener('change', () => browser.storage.local.set({ useXLogin: useXLoginEl.checked }));
 
 // Matches --duration-base in popup.css. The settings panel and the main UI
@@ -371,23 +388,25 @@ settingsToggleBtn.addEventListener('click', () => {
 
 saveSettingsBtn.addEventListener('click', saveSettings);
 
-browseDirBtn.addEventListener('click', () => {
-  browseDirBtn.disabled = true;
-  setSettingsStatus('Choose a folder…');
-  send({ type: 'browseFolder' })
-    .then((res) => {
-      browseDirBtn.disabled = false;
-      if (res && res.path) {
-        downloadDirInput.value = res.path;
-        saveSettings(); // auto-save: a picked folder is already a deliberate choice
-      } else {
-        setSettingsStatus(''); // user cancelled the dialog
-      }
-    })
-    .catch((err) => {
-      browseDirBtn.disabled = false;
-      setSettingsStatus('Error: ' + err.message);
-    });
+Object.entries(dirFields).forEach(([name, field]) => {
+  field.browse.addEventListener('click', () => {
+    field.browse.disabled = true;
+    setSettingsStatus('Choose a folder…');
+    send({ type: 'browseFolder', source: name })
+      .then((res) => {
+        field.browse.disabled = false;
+        if (res && res.path) {
+          field.input.value = res.path;
+          saveSettings(); // auto-save: a picked folder is already a deliberate choice
+        } else {
+          setSettingsStatus(''); // user cancelled the dialog
+        }
+      })
+      .catch((err) => {
+        field.browse.disabled = false;
+        setSettingsStatus('Error: ' + err.message);
+      });
+  });
 });
 
 // ------------------------------------------------------------------ theme

@@ -28,8 +28,10 @@ Source:  https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n
 Version: n9.0.2 (ffmpeg -version), built 2026-09-26
 Build config confirms LGPL: --enable-version3, --disable-libx264,
   --disable-libx265, --disable-libxavs2, --disable-libxvid (the GPL-only
-  encoders are off; --enable-libmp3lame and stream copy/remux, which is
-  all this project actually uses ffmpeg for, are unaffected).
+  encoders are off; --enable-libmp3lame and stream copy/remux are unaffected).
+  Tweet-card videos need an H.264 encoder, and this build has no libx264,
+  so backend/render.py `h264_args()` picks libx264 if present, else the
+  bundled libopenh264, else Windows' h264_mf, else mpeg4.
 Corresponding source: the BtbN/FFmpeg-Builds repository and its pinned
   FFmpeg upstream commit for this release satisfy LGPL's source-availability
   requirement; both are public.
