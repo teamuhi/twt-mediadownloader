@@ -1,4 +1,4 @@
-; Inno Setup script for the twtdl Downloader native host + extension.
+; Inno Setup script for the nickel.tools native host + extension.
 ;
 ; Build order (see browser-extension/installer/README.md for full steps):
 ;   1. browser-extension/native-host/vendor/ffmpeg/ has ffmpeg.exe + ffprobe.exe
@@ -26,9 +26,9 @@
 ; at startup, so installing or upgrading while it's running left the policy
 ; silently not taking effect until some later, easy-to-miss restart.
 
-#define MyAppName "twtdl Downloader"
+#define MyAppName "nickel.tools"
 #define MyAppVersion "0.6.1"
-#define MyAppPublisher "twtdl"
+#define MyAppPublisher "nickel.tools"
 #define MyAppURL "https://github.com/teamuhi/twt-mediadownloader"
 #define NativeHostName "com.twtdl.twtdl_extension"
 #define ExtensionId "twtdl-extension@local"
@@ -242,7 +242,7 @@ begin
   Json :=
     '{' + #13#10 +
     '  "name": "' + '{#NativeHostName}' + '",' + #13#10 +
-    '  "description": "Native host for the twtdl Downloader Firefox extension",' + #13#10 +
+    '  "description": "Native host for the nickel.tools Firefox extension",' + #13#10 +
     '  "path": "' + JsonEscape(HostExePath) + '",' + #13#10 +
     '  "type": "stdio",' + #13#10 +
     '  "allowed_extensions": ["' + '{#ExtensionId}' + '"]' + #13#10 +
@@ -261,7 +261,7 @@ begin
   Json :=
     '{' + #13#10 +
     '  "name": "' + '{#NativeHostName}' + '",' + #13#10 +
-    '  "description": "Native host for the twtdl Downloader extension",' + #13#10 +
+    '  "description": "Native host for the nickel.tools extension",' + #13#10 +
     '  "path": "' + JsonEscape(HostExePath) + '",' + #13#10 +
     '  "type": "stdio",' + #13#10 +
     '  "allowed_origins": ["chrome-extension://' + '{#ChromiumExtensionId}' + '/"]' + #13#10 +

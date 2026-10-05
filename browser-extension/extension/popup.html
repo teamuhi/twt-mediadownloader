@@ -3,25 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>twtdl Downloader</title>
+  <title>nickel.tools</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div id="app">
     <header id="topbar">
       <div class="brand">
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-          <rect x="1" y="1" width="16" height="16" rx="4.5" fill="currentColor"/>
-          <path d="M9 4.8v6.4M6.2 8.6 9 11.4l2.8-2.8M5.6 13.4h6.8" stroke="var(--accent-text)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span>twtdl</span>
+        <img src="icons/icon-48.png" width="20" height="20" alt="" aria-hidden="true">
+        <span>nickel.tools</span>
       </div>
       <div id="tabs" class="nav-tabs" role="tablist" aria-label="Source">
-        <button type="button" role="tab" data-tab="youtube" aria-selected="true">YouTube</button>
-        <button type="button" role="tab" data-tab="twitter" aria-selected="false">X / Twitter</button>
+        <button type="button" role="tab" data-tab="youtube" data-label="YouTube" aria-selected="true">YouTube</button>
+        <button type="button" role="tab" data-tab="twitter" data-label="X / Twitter" aria-selected="false">X / Twitter</button>
+        <button type="button" role="tab" data-tab="web" data-label="Web" aria-selected="false">Web</button>
       </div>
       <span class="header-title">Settings</span>
       <div class="header-actions">
+        <button id="popout-btn" class="icon-btn" type="button" title="Open in a separate window" aria-label="Open in a separate window">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>
+          </svg>
+        </button>
         <button id="theme-toggle" class="icon-btn" type="button" title="Switch to dark mode" aria-label="Toggle theme">
           <svg id="icon-moon" class="ico ico-swap" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
@@ -55,6 +58,11 @@
           <div class="field"><input type="text" id="twitter-dir" placeholder="Same as YouTube unless set"></div>
           <button id="browse-twitter-dir" class="btn-secondary" type="button">Browse…</button>
         </div>
+        <label class="field-label" for="web-dir">Web</label>
+        <div class="dir-row">
+          <div class="field"><input type="text" id="web-dir" placeholder="Same as YouTube unless set"></div>
+          <button id="browse-web-dir" class="btn-secondary" type="button">Browse…</button>
+        </div>
         <div class="settings-row">
           <button id="save-settings" type="button" disabled>Save</button>
           <span id="settings-status"></span>
@@ -76,7 +84,7 @@
       <section id="yt-panel" class="panel" role="tabpanel">
         <div class="msg"></div>
         <div class="error-box hidden"></div>
-        <div class="host-note hidden">Native host is out of date, so some features are unavailable. Reinstall twtdl to update it.</div>
+        <div class="host-note hidden">Native host is out of date, so some features are unavailable. Reinstall nickel.tools to update it.</div>
         <div id="video-info" class="hidden">
           <div id="yt-kind" class="seg yt-kind" role="tablist" aria-label="Download type">
             <button type="button" role="tab" data-kind="video" aria-selected="true">Video</button>
@@ -168,7 +176,7 @@
       <section id="tw-panel" class="panel hidden" role="tabpanel">
         <div class="msg"></div>
         <div class="error-box hidden"></div>
-        <div class="host-note hidden">Native host is out of date, so some features are unavailable. Reinstall twtdl to update it.</div>
+        <div class="host-note hidden">Native host is out of date, so some features are unavailable. Reinstall nickel.tools to update it.</div>
         <div id="tw-content" class="hidden">
           <p id="tw-text" class="tw-text hidden"></p>
 
@@ -277,6 +285,54 @@
         </div>
       </section>
 
+      <section id="web-panel" class="panel hidden" role="tabpanel">
+        <div class="msg"></div>
+        <div class="error-box hidden"></div>
+        <div class="host-note hidden">Native host is out of date, so some features are unavailable. Reinstall nickel.tools to update it.</div>
+        <div id="web-content" class="hidden">
+          <div class="web-toolbar">
+            <div id="web-kinds" class="seg seg-sm" role="tablist" aria-label="Media type"></div>
+            <select id="web-min" aria-label="Minimum image size"></select>
+          </div>
+          <label class="web-selectall" for="web-all">
+            <input type="checkbox" id="web-all">
+            <span id="web-count"></span>
+          </label>
+          <div id="web-grid" class="web-grid"></div>
+          <div class="group">
+            <div class="row" id="web-convert-row">
+              <span class="row-label">Convert images to</span>
+              <select id="web-convert" aria-label="Convert images to">
+                <option value="">Original format</option>
+                <option value="png">PNG</option>
+                <option value="jpg">JPG</option>
+                <option value="webp">WebP</option>
+                <option value="gif">GIF</option>
+                <option value="bmp">BMP</option>
+                <option value="tiff">TIFF</option>
+                <option value="avif">AVIF</option>
+              </select>
+            </div>
+            <div class="row" id="web-convert-video-row">
+              <span class="row-label">Convert video to</span>
+              <select id="web-convert-video" aria-label="Convert video to">
+                <option value="">Original format</option>
+                <option value="mp4">MP4</option>
+                <option value="webm">WebM</option>
+                <option value="mkv">MKV</option>
+                <option value="mov">MOV</option>
+                <option value="avi">AVI</option>
+                <option value="gif">GIF (animated)</option>
+              </select>
+            </div>
+            <label class="row" for="web-subfolder">
+              <span class="row-label">Save in a folder named after the page</span>
+              <input type="checkbox" id="web-subfolder" class="switch">
+            </label>
+          </div>
+        </div>
+      </section>
+
       <div id="actions" class="hidden">
         <div class="download-row">
           <button id="download" type="button">
@@ -317,5 +373,6 @@
   <script src="popup.js"></script>
   <script src="youtube.js"></script>
   <script src="twitter.js"></script>
+  <script src="web.js"></script>
 </body>
 </html>

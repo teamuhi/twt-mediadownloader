@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
-"""Native messaging host for the twtdl Downloader Firefox extension.
+"""Native messaging host for the nickel.tools Firefox extension.
 
 Speaks Firefox's native messaging stdio protocol: each message is a 4-byte
 little-endian length prefix followed by that many bytes of UTF-8 JSON, in
@@ -45,6 +45,7 @@ if not getattr(sys, 'frozen', False):
 
 import core  # noqa: E402
 import errors  # noqa: E402
+import web  # noqa: E402
 
 LOG_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'twtdl-extension')
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -159,7 +160,7 @@ def handle_formats(msg):
         info = core.fetch_formats(msg.get('url', ''), ffmpeg_location=FFMPEG_LOCATION)
         send_message(dict(info, type='formatsResult', requestId=request_id, ok=True))
     except Exception as e:
-        send_message(dict(errors.classify_error(e), type='formatsResult', requestId=request_id, ok=False))
+        send_message(dict(errors.classify_error(e, 'youtube'), type='formatsResult', requestId=request_id, ok=False))
 
 
 def handle_tweet(msg):
@@ -168,7 +169,7 @@ def handle_tweet(msg):
         info = core.get_tweet_info(msg.get('url', ''), msg.get('cookies'))
         send_message(dict(info, type='tweetResult', requestId=request_id, ok=True))
     except Exception as e:
-        send_message(dict(errors.classify_error(e), type='tweetResult', requestId=request_id, ok=False))
+        send_message(dict(errors.classify_error(e, 'twitter'), type='tweetResult', requestId=request_id, ok=False))
 
 
 def handle_download(msg):
@@ -190,10 +191,16 @@ def handle_download(msg):
                                   download_dir=download_dir, title=title, cookies=msg.get('cookies'))
         return
 
+    if msg.get('source') == 'web':
+        web.run_web_download(msg.get('items'), msg.get('pageUrl') or url, on_progress, ffmpeg_location=FFMPEG_LOCATION,
+                             download_dir=download_dir, title=title, subfolder=bool(msg.get('subfolder')),
+                             convert=msg.get('convert'))
+        return
+
     try:
         core.validate_download_request(url, mode, quality, msg.get('audio'))
     except ValueError as e:
-        on_progress(status='error', **errors.classify_error(e))
+        on_progress(status='error', **errors.classify_error(e, 'youtube'))
         return
 
     core.run_download(url, mode, quality, on_progress, ffmpeg_location=FFMPEG_LOCATION, download_dir=download_dir, title=title,
@@ -244,6 +251,8 @@ def handle_browse_folder(msg):
         root = tkinter.Tk()
         root.withdraw()
         root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
         initial_dir = core.get_download_dir(msg.get('source') or 'youtube')
         path = filedialog.askdirectory(
             initialdir=initial_dir if os.path.isdir(initial_dir) else None,
@@ -263,6 +272,7 @@ def handle_get_config(msg):
         'ok': True,
         'downloadDir': core.get_download_dir('youtube'),
         'twitterDownloadDir': core.get_download_dir('twitter'),
+        'webDownloadDir': core.get_download_dir('web'),
     })
 
 
@@ -276,12 +286,15 @@ def handle_set_config(msg):
             core.set_download_dir(config['downloadDir'], 'youtube')
         if 'twitterDownloadDir' in config:
             core.set_download_dir(config['twitterDownloadDir'], 'twitter')
+        if 'webDownloadDir' in config:
+            core.set_download_dir(config['webDownloadDir'], 'web')
         send_message({
             'type': 'configResult',
             'requestId': request_id,
             'ok': True,
             'downloadDir': core.get_download_dir('youtube'),
             'twitterDownloadDir': core.get_download_dir('twitter'),
+            'webDownloadDir': core.get_download_dir('web'),
         })
     except Exception as e:
         send_message({'type': 'configResult', 'requestId': request_id, 'ok': False, 'error': str(e)})
