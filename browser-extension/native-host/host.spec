@@ -5,7 +5,7 @@ Builds a --onedir distributable (not --onefile): ffmpeg has to ship
 alongside host.exe regardless, so a self-extracting one-file exe would just
 re-extract everything into a temp dir on every launch for no benefit.
 
-Usage (from this directory, once the build venv has `pip install yt-dlp`
+Usage (from this directory, once the build venv has `pip install yt-dlp pillow`
 and vendor/ffmpeg/ has been populated, see vendor/README.md):
 
     pyinstaller host.spec

@@ -13,7 +13,7 @@ actual extraction/download logic with `backend/server.py` via
 
 ## Local dev setup (no packaging)
 
-Prerequisite: `pip install yt-dlp` (not vendored in this repo; both
+Prerequisite: `pip install yt-dlp pillow` (not vendored in this repo; both
 `host.py` and `backend/server.py` import it as a normal dependency).
 
 Firefox finds native messaging hosts via a registry key whose value is the
@@ -30,23 +30,23 @@ window flashing on every launch).
    "<path to pythonw.exe>" "<repo>\browser-extension\native-host\host.py"
    ```
 
-2. Copy `com.leconnn.youtube_dl_extension.json.template` to
-   `com.leconnn.youtube_dl_extension.json` (gitignored) next to it, and
+2. Copy `com.twtdl.twtdl_extension.json.template` to
+   `com.twtdl.twtdl_extension.json` (gitignored) next to it, and
    replace `__HOST_EXE_PATH__` with the absolute path to `host_dev.bat`
    (JSON-escape backslashes, e.g. `C:\\Users\\you\\...\\host_dev.bat`).
 
 3. Register it for your user (no admin rights needed):
    ```powershell
-   $key = 'HKCU:\Software\Mozilla\NativeMessagingHosts\com.leconnn.youtube_dl_extension'
+   $key = 'HKCU:\Software\Mozilla\NativeMessagingHosts\com.twtdl.twtdl_extension'
    New-Item -Path $key -Force | Out-Null
-   Set-ItemProperty -Path $key -Name '(Default)' -Value '<repo>\browser-extension\native-host\com.leconnn.youtube_dl_extension.json'
+   Set-ItemProperty -Path $key -Name '(Default)' -Value '<repo>\browser-extension\native-host\com.twtdl.twtdl_extension.json'
    ```
 
 4. Load the extension via `about:debugging#/runtime/this-firefox` as usual.
    No options page / token step anymore; it just works once the registry
    key points at a valid manifest.
 
-Check `%LOCALAPPDATA%\youtube-dl-extension\host.log` if something isn't
+Check `%LOCALAPPDATA%\twtdl-extension\host.log` if something isn't
 connecting. `host.py` never prints to stdout/stderr (that would corrupt
 the message stream Firefox reads), so all diagnostics go there instead.
 
@@ -68,8 +68,8 @@ registry location differ per browser.
    `extension-chromium/manifest.json`'s `key` field); if it's different,
    something about the manifest's `key` field changed and the template below
    needs updating to match.
-3. Copy `com.leconnn.youtube_dl_extension.chromium.json.template` to
-   `com.leconnn.youtube_dl_extension.chromium.json` (gitignored) next to it,
+3. Copy `com.twtdl.twtdl_extension.chromium.json.template` to
+   `com.twtdl.twtdl_extension.chromium.json` (gitignored) next to it,
    and replace `__HOST_EXE_PATH__` with the absolute path to the same
    `host_dev.bat` used for Firefox (JSON-escape backslashes).
 4. Register it per browser you're testing (HKCU, no admin rights needed) --
@@ -77,14 +77,14 @@ registry location differ per browser.
    identical:
    ```powershell
    # Chrome
-   $key = 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.leconnn.youtube_dl_extension'
+   $key = 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.twtdl.twtdl_extension'
    # Edge
-   $key = 'HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.leconnn.youtube_dl_extension'
+   $key = 'HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.twtdl.twtdl_extension'
    # Brave
-   $key = 'HKCU:\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.leconnn.youtube_dl_extension'
+   $key = 'HKCU:\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.twtdl.twtdl_extension'
 
    New-Item -Path $key -Force | Out-Null
-   Set-ItemProperty -Path $key -Name '(Default)' -Value '<repo>\browser-extension\native-host\com.leconnn.youtube_dl_extension.chromium.json'
+   Set-ItemProperty -Path $key -Name '(Default)' -Value '<repo>\browser-extension\native-host\com.twtdl.twtdl_extension.chromium.json'
    ```
 5. Reload the extension (the reload icon on its card in `chrome://extensions`)
    after registering, then open the popup as usual.

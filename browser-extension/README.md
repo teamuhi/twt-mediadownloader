@@ -1,7 +1,8 @@
-# youtube-dl browser extension
+# twtdl browser extension
 
-Adds a toolbar button that downloads the video or audio on the current tab
-as MP4 (with a resolution picker), or extracts audio as MP3 (with a bitrate
+Adds a toolbar button that downloads Twitter/X media (as-is, as a GIF, or
+rendered into a tweet card) and, on a second tab, the video or audio on
+any page as MP4 (with a resolution picker), or extracts audio as MP3 (with a bitrate
 picker) or WAV. Works on any site [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 supports (well over a thousand), not just YouTube, though YouTube is the
 only one this has actually been tested against; other sites are "should
@@ -15,8 +16,8 @@ supports Firefox, Chrome, Edge, and Brave.
    if open. The installer needs this for Firefox specifically (see below)
    and will prompt you to close it if you forget; closing the Chromium
    browsers first just avoids needing to restart them afterward.
-2. Download `youtube-dl-extension-setup.exe` from the
-   [latest release](https://github.com/leconnn/youtube-dl-extension/releases/latest).
+2. Download `twtdl-extension-setup.exe` from the
+   [latest release](https://github.com/twtdl/twtdl-extension/releases/latest).
 3. Run it. Windows will show a SmartScreen warning ("Windows protected your
    PC") because the installer isn't code-signed; click "More info", then
    "Run anyway". This is expected, not a sign of anything wrong; see
@@ -63,7 +64,7 @@ installed:
 
 - Copies the bundled program (a native Python runtime plus yt-dlp plus
   ffmpeg, packaged together so nothing separate needs installing) to
-  `Program Files\youtube-dl-extension\`. The same program serves every
+  `Program Files\twtdl-extension\`. The same program serves every
   browser -- only how each browser is told to find it differs.
 - Registers that program as a native messaging host for each browser it
   detects, at `HKLM\SOFTWARE\Mozilla\NativeMessagingHosts\...` for Firefox,
@@ -128,7 +129,7 @@ finishes or fails even if you've closed the popup, since a background
 script tracks the job independently. Click a finished-download notification
 to open its folder in Explorer with the file selected.
 
-By default the finished file lands in `Downloads\youtube-dl-extension\` in
+By default the finished file lands in `Downloads\twtdl-extension\` in
 your user folder. Click the gear icon in the popup to set a different
 default location -- click **Browse…** to pick a folder instead of typing a
 path (a native OS folder picker, since a real filesystem path isn't
@@ -143,6 +144,38 @@ manager avoids overwriting.
 
 Click the sun/moon icon to switch between light and dark mode; your choice
 is remembered.
+
+### The Twitter tab
+
+The popup has two tabs, **YouTube** (everything above) and **Twitter**. On a
+tweet link (`x.com/<user>/status/<id>`) it opens on the Twitter tab by
+itself; you can switch tabs by hand at any time. A tweet with several media
+items shows a thumbnail strip to pick which one to download.
+
+- **Media only** saves the tweet's own file: the video as MP4 (pick a
+  quality), a photo as the original-quality image, or a video/GIF **converted
+  to a GIF**. For GIF you can set the frame rate, speed, resolution (width),
+  and start/end points. A looping preview plays the chosen clip, and the
+  **Set start** / **Set end** buttons take the preview's current time.
+- **Tweet card** renders the tweet like a card: profile picture, name, @handle,
+  and (each with its own checkbox) the tweet text, date/time and verified
+  badge, in a **light or dark card theme** (independent of the popup's
+  theme). A video or GIF tweet becomes an MP4 with the card around the
+  video; a photo tweet becomes a PNG (up to four photos in a grid).
+
+Sensitive or protected tweets need a logged-in account. With **Use my x.com
+login** on (settings, on by default) the extension reads your browser's
+x.com cookies and hands them to the local program for that one request,
+nothing else; turn it off to never do that, at the cost of those tweets
+failing with `E_AUTH_REQUIRED`.
+
+When something fails, the popup and the notification show a short code and
+a plain-language reason with a hint, e.g. `E_EXTRACTOR_BROKEN` (yt-dlp
+probably outdated; the settings panel shows the bundled yt-dlp version and
+age), `E_AUTH_REQUIRED`, `E_NOT_FOUND`, `E_NO_MEDIA`, `E_FORMAT` (different
+format than expected), `E_RATE_LIMITED`, `E_NETWORK`, `E_FFMPEG_FAILED`.
+The raw error is under "Details". The full list is in
+`backend/errors.py`.
 
 ## Notes and limitations
 
@@ -174,7 +207,7 @@ top-level `LICENSE` file for this repository's own code.
 
 ## Uninstalling
 
-Uninstall "youtube-dl Downloader" from Windows Settings > Apps, same as any
+Uninstall "twtdl Downloader" from Windows Settings > Apps, same as any
 other program. This removes the installed files, every native messaging
 registry entry it created, the Firefox policy entry, and the
 `ExtensionInstallForcelist` entry for each Chromium browser it was

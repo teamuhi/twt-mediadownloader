@@ -17,7 +17,7 @@
 //     host.py persists to disk per requestId (see getJobStatus below),
 //     rather than trusting the rehydrated in-memory shape as current.
 
-const HOST_NAME = 'com.leconnn.youtube_dl_extension';
+const HOST_NAME = 'com.twtdl.twtdl_extension';
 
 let port = null;
 
@@ -34,7 +34,7 @@ const pendingRequests = {};
 // restart too.
 let requestIdToTabUrl = {};
 
-// tabUrl -> { requestId, title, mode, status, percent, filename, error }
+// tabUrl -> { requestId, title, mode, source, status, percent, filename, error, errorCode, errorHint }
 let jobs = {};
 
 // notificationId -> file path, so clicking a finished-download notification
@@ -164,13 +164,35 @@ function sendRequest(message) {
   });
 }
 
+
+// Browser's x.com login cookies, for sensitive/protected tweets. Sent to the
+// local host only for that one request; null when the user turned it off.
+async function getXCookies() {
+  const { useXLogin } = await chrome.storage.local.get('useXLogin');
+  if (useXLogin === false) return null;
+  const lists = await Promise.all(['x.com', 'twitter.com'].map((domain) => chrome.cookies.getAll({ domain })));
+  return lists.flat().map((c) => ({
+    domain: c.domain, path: c.path, secure: c.secure, expirationDate: c.expirationDate, name: c.name, value: c.value,
+  }));
+}
+
+// Error shape shared with the popup: host errors carry a code, readable
+// message and hint (see backend/errors.py).
+function makeError(msg) {
+  return Object.assign(new Error(msg.error), { code: msg.errorCode, hint: msg.errorHint, detail: msg.errorDetail });
+}
+
+function failure(err) {
+  return { ok: false, error: err.message, errorCode: err.code, errorHint: err.hint, errorDetail: err.detail };
+}
+
 function notify(job) {
   const isError = job.status === 'error';
   chrome.notifications.create({
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icons/icon-48.png'),
-    title: isError ? 'Download failed' : 'Download finished',
-    message: isError ? job.error : (job.title || job.filename || 'Saved') + (job.path ? '\nClick to show in folder' : ''),
+    title: isError ? 'Download failed' + (job.errorCode ? ' (' + job.errorCode + ')' : '') : 'Download finished',
+    message: isError ? job.error + (job.errorHint ? '\n' + job.errorHint : '') : (job.title || job.filename || 'Saved') + (job.path ? '\nClick to show in folder' : ''),
   }, (notificationId) => {
     if (!isError && job.path) {
       notificationPaths[notificationId] = job.path;
@@ -197,12 +219,12 @@ function broadcast(tabUrl) {
 }
 
 function onPortMessage(msg) {
-  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'configResult' || msg.type === 'jobStatusResult' || msg.type === 'browseFolderResult') {
+  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'tweetResult' || msg.type === 'configResult' || msg.type === 'jobStatusResult' || msg.type === 'browseFolderResult') {
     const pending = pendingRequests[msg.requestId];
     if (!pending) return;
     delete pendingRequests[msg.requestId];
     if (msg.ok === false) {
-      pending.reject(new Error(msg.error));
+      pending.reject(makeError(msg));
     } else {
       pending.resolve(msg);
     }
@@ -250,39 +272,41 @@ function onPortDisconnect() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'getFormats') {
     stateLoaded.then(() => sendRequest({ type: 'formats', requestId: newRequestId(), url: message.url }))
-      .then(sendResponse, (err) => sendResponse({ ok: false, error: err.message }));
+      .then(sendResponse, (err) => sendResponse(failure(err)));
+    return true;
+  }
+
+  if (message.type === 'getTweet') {
+    getXCookies()
+      .then((cookies) => sendRequest({ type: 'tweet', requestId: newRequestId(), url: message.url, cookies }))
+      .then(sendResponse, (err) => sendResponse(failure(err)));
     return true;
   }
 
   if (message.type === 'startDownload') {
-    stateLoaded.then(() => {
+    stateLoaded.then(async () => {
       const requestId = newRequestId();
-      console.log('[bg] startDownload: requestId=', requestId, 'tabUrl=', message.tabUrl, 'url=', message.url);
-      requestIdToTabUrl[requestId] = message.tabUrl;
-      jobs[message.tabUrl] = {
+      const { type, tabUrl, ...params } = message;
+      console.log('[bg] startDownload: requestId=', requestId, 'tabUrl=', tabUrl, 'url=', message.url);
+      requestIdToTabUrl[requestId] = tabUrl;
+      jobs[tabUrl] = {
         requestId,
         title: message.title,
         mode: message.mode,
+        source: message.source || 'youtube',
         status: 'starting',
         percent: 0,
       };
       try {
-        ensurePort().postMessage({
-          type: 'download',
-          requestId,
-          url: message.url,
-          mode: message.mode,
-          quality: message.quality,
-          title: message.title,
-          downloadDir: message.downloadDir,
-        });
+        const cookies = message.source === 'twitter' ? await getXCookies() : null;
+        ensurePort().postMessage({ ...params, type: 'download', requestId, cookies });
       } catch (e) {
         console.error('[bg] startDownload: postMessage threw', e);
-        jobs[message.tabUrl].status = 'error';
-        jobs[message.tabUrl].error = e.message;
+        jobs[tabUrl].status = 'error';
+        jobs[tabUrl].error = e.message;
       }
       persistState();
-      broadcast(message.tabUrl);
+      broadcast(tabUrl);
     });
     return false;
   }
@@ -294,19 +318,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'getConfig') {
     sendRequest({ type: 'getConfig', requestId: newRequestId() })
-      .then(sendResponse, (err) => sendResponse({ ok: false, error: err.message }));
+      .then(sendResponse, (err) => sendResponse(failure(err)));
     return true;
   }
 
   if (message.type === 'setConfig') {
     sendRequest({ type: 'setConfig', requestId: newRequestId(), config: message.config })
-      .then(sendResponse, (err) => sendResponse({ ok: false, error: err.message }));
+      .then(sendResponse, (err) => sendResponse(failure(err)));
     return true;
   }
 
   if (message.type === 'browseFolder') {
     sendRequest({ type: 'browseFolder', requestId: newRequestId() })
-      .then(sendResponse, (err) => sendResponse({ ok: false, error: err.message }));
+      .then(sendResponse, (err) => sendResponse(failure(err)));
     return true;
   }
 

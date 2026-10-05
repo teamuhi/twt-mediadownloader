@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
-"""Native messaging host for the youtube-dl Downloader Firefox extension.
+"""Native messaging host for the twtdl Downloader Firefox extension.
 
 Speaks Firefox's native messaging stdio protocol: each message is a 4-byte
 little-endian length prefix followed by that many bytes of UTF-8 JSON, in
@@ -44,8 +44,9 @@ if not getattr(sys, 'frozen', False):
     sys.path.insert(0, BACKEND_DIR)
 
 import core  # noqa: E402
+import errors  # noqa: E402
 
-LOG_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'youtube-dl-extension')
+LOG_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'twtdl-extension')
 os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
     filename=os.path.join(LOG_DIR, 'host.log'),
@@ -158,7 +159,16 @@ def handle_formats(msg):
         info = core.fetch_formats(msg.get('url', ''))
         send_message(dict(info, type='formatsResult', requestId=request_id, ok=True))
     except Exception as e:
-        send_message({'type': 'formatsResult', 'requestId': request_id, 'ok': False, 'error': str(e)})
+        send_message(dict(errors.classify_error(e), type='formatsResult', requestId=request_id, ok=False))
+
+
+def handle_tweet(msg):
+    request_id = msg.get('requestId')
+    try:
+        info = core.get_tweet_info(msg.get('url', ''), msg.get('cookies'))
+        send_message(dict(info, type='tweetResult', requestId=request_id, ok=True))
+    except Exception as e:
+        send_message(dict(errors.classify_error(e), type='tweetResult', requestId=request_id, ok=False))
 
 
 def handle_download(msg):
@@ -173,13 +183,19 @@ def handle_download(msg):
         send_message(dict(kwargs, type='jobUpdate', requestId=request_id))
         write_job_file(request_id, kwargs)
 
+    on_progress(status='starting', percent=0)
+
+    if msg.get('source') == 'twitter':
+        core.run_twitter_download(url, msg.get('options'), on_progress, ffmpeg_location=FFMPEG_LOCATION,
+                                  download_dir=download_dir, title=title, cookies=msg.get('cookies'))
+        return
+
     try:
         core.validate_download_request(url, mode, quality)
     except ValueError as e:
-        on_progress(status='error', error=str(e))
+        on_progress(status='error', **errors.classify_error(e))
         return
 
-    on_progress(status='starting', percent=0)
     core.run_download(url, mode, quality, on_progress, ffmpeg_location=FFMPEG_LOCATION, download_dir=download_dir, title=title)
 
 
@@ -266,6 +282,7 @@ def handle_set_config(msg):
 def main():
     log.info('host started, pid=%s, frozen=%s', os.getpid(), getattr(sys, 'frozen', False))
     sweep_stale_jobs()
+    core.sweep_tmp()
     threading.Thread(target=_writer_loop, daemon=True).start()
     try:
         while True:
@@ -291,6 +308,8 @@ def main():
                 handle_get_job_status(msg)
             elif msg_type == 'browseFolder':
                 threading.Thread(target=handle_browse_folder, args=(msg,), daemon=True).start()
+            elif msg_type == 'tweet':
+                threading.Thread(target=handle_tweet, args=(msg,), daemon=True).start()
             elif msg_type == 'formats':
                 threading.Thread(target=handle_formats, args=(msg,), daemon=True).start()
             elif msg_type == 'download':

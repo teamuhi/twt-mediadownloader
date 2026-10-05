@@ -43,13 +43,17 @@ body {
   line-height: 1.5;
   color: var(--text);
   background: var(--canvas);
-  width: 300px;
+  width: 340px;
+  max-width: 100vw;
   margin: 0;
   transition: background-color var(--duration-base) ease, color var(--duration-base) ease;
 }
 
 #app {
-  padding: 14px 16px 16px;
+  padding: 14px 16px 0;
+  max-height: 590px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 header {
@@ -237,25 +241,31 @@ header {
 }
 
 #settings-panel,
-#video-info {
+#main,
+#video-info,
+#tw-content {
   opacity: 1;
   transition: opacity var(--duration-base) var(--ease-out), display var(--duration-base) allow-discrete;
 }
 
 #settings-panel.hidden,
-#video-info.hidden {
+#main.hidden,
+#video-info.hidden,
+#tw-content.hidden {
   opacity: 0;
   display: none;
 }
 
 @starting-style {
   #settings-panel:not(.hidden),
-  #video-info:not(.hidden) {
+  #main:not(.hidden),
+  #video-info:not(.hidden),
+  #tw-content:not(.hidden) {
     opacity: 0;
   }
 }
 
-#message {
+.msg {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.6;
@@ -276,7 +286,8 @@ header {
   display: none;
 }
 
-#title {
+#title,
+#tw-title {
   display: block;
   width: 100%;
   font: inherit;
@@ -291,16 +302,19 @@ header {
   transition: border-color var(--duration-base) ease;
 }
 
-#title:hover {
+#title:hover,
+#tw-title:hover {
   border-bottom-color: var(--border);
 }
 
-#title:focus {
+#title:focus,
+#tw-title:focus {
   outline: none;
   border-bottom-color: var(--text-muted);
 }
 
-#title::placeholder {
+#title::placeholder,
+#tw-title::placeholder {
   color: var(--text-muted);
   font-weight: 500;
 }
@@ -355,7 +369,6 @@ select:focus {
 .download-row {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
 }
 
 #download {
@@ -464,7 +477,537 @@ select:focus {
   #browse-dir:active,
   #save-settings:active,
   #download:active,
-  #download-to:active {
+  #download-to:active,
+  .seg button:active,
+  .mini-btn:active {
     transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------- tabs / segmented */
+
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.seg button {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: background-color var(--duration-base) ease, color var(--duration-base) ease, transform var(--duration-fast) ease;
+}
+
+.seg button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.seg button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.seg button[aria-selected="true"] {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.seg button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#tabs,
+#tw-kind {
+  margin-bottom: 12px;
+}
+
+#tw-card-theme {
+  margin-bottom: 8px;
+}
+
+/* ---------------------------------------------------------------- messages / errors */
+
+.msg:empty {
+  display: none;
+}
+
+.error-box {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--error-text);
+  background: var(--error-bg);
+  border-radius: var(--radius);
+}
+
+.err-code {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 0 6px;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+}
+
+.err-msg {
+  font-weight: 500;
+}
+
+.err-hint {
+  margin-top: 2px;
+  opacity: 0.85;
+}
+
+.error-box details {
+  margin-top: 6px;
+}
+
+.error-box summary {
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.error-box pre {
+  max-height: 90px;
+  margin: 4px 0 0;
+  overflow: auto;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#job-error {
+  margin-top: 8px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- sticky download bar */
+
+#actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 8px;
+  padding: 6px 0 10px;
+  background: var(--canvas);
+  transition: background-color var(--duration-base) ease;
+}
+
+#actions.hidden {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- settings extras */
+
+#settings-panel label.check {
+  display: flex;
+  margin: 12px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+#ytdlp-info {
+  margin-top: 8px;
+}
+
+#ytdlp-info.is-stale {
+  color: var(--error-text);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-bottom: 4px;
+}
+
+/* ---------------------------------------------------------------- twitter panel */
+
+.tw-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+#tw-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.tw-who {
+  min-width: 0;
+}
+
+.tw-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.tw-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tw-check {
+  flex-shrink: 0;
+}
+
+.tw-handle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tw-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  margin: 0 0 10px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.tw-strip {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 2px;
+  overflow-x: auto;
+}
+
+.tw-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color var(--duration-base) ease;
+}
+
+.tw-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tw-thumb.is-selected {
+  border-color: var(--accent);
+}
+
+.tw-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 3px;
+}
+
+/* classes above set `display`, which would otherwise beat the generic .hidden */
+.tw-author.hidden,
+.tw-strip.hidden,
+.tw-text.hidden,
+.card-media.hidden,
+#tw-preview.hidden {
+  display: none;
+}
+
+.opt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
+.opt-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.opt-grid select {
+  width: 100%;
+  max-width: none;
+}
+
+#tw-preview {
+  display: block;
+  width: 100%;
+  max-height: 100px;
+  margin-bottom: 6px;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.dual-range {
+  position: relative;
+  height: 22px;
+  margin: 2px 0;
+}
+
+.dual-range::before,
+.dual-range::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+}
+
+.dual-range::before {
+  left: 0;
+  right: 0;
+  background: var(--border);
+}
+
+.dual-range::after {
+  left: var(--lo, 0%);
+  right: calc(100% - var(--hi, 100%));
+  background: var(--accent);
+}
+
+.dual-range input[type="range"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.dual-range input[type="range"]::-webkit-slider-runnable-track {
+  height: 22px;
+  background: transparent;
+}
+
+.dual-range input[type="range"]::-moz-range-track {
+  background: transparent;
+}
+
+.dual-range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 4px;
+  background: var(--accent);
+  border: 2px solid var(--canvas);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--text-muted);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.dual-range input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border: 2px solid var(--canvas);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--text-muted);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.trim-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trim-row input[type="text"] {
+  flex: 0 0 56px;
+  min-width: 0;
+  padding: 3px 4px;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-align: center;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.trim-row input[type="text"]:focus {
+  outline: none;
+  border-color: var(--text-muted);
+}
+
+.mini-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color var(--duration-base) ease, transform var(--duration-fast) ease;
+}
+
+.mini-btn:hover {
+  border-color: var(--text-muted);
+}
+
+.mini-btn:active {
+  transform: scale(0.96);
+}
+
+#tw-photo-hint,
+#tw-card-out {
+  margin-top: 6px;
+}
+
+/* Card preview: always themed by the *card* theme, independent of the popup's. */
+
+.tw-card {
+  --c-bg: #ffffff;
+  --c-text: #0f1419;
+  --c-muted: #536471;
+  --c-border: #cfd9de;
+  margin-top: 8px;
+  padding: 12px;
+  color: var(--c-text);
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  transition: background-color var(--duration-base) ease, color var(--duration-base) ease, border-color var(--duration-base) ease;
+}
+
+.tw-card[data-card-theme="dark"] {
+  --c-bg: #000000;
+  --c-text: #e7e9ea;
+  --c-muted: #71767b;
+  --c-border: #2f3336;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#card-avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--c-border);
+}
+
+.card-who {
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.card-name {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.card-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-handle,
+.card-date {
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+.card-text {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.card-media {
+  display: block;
+  width: 100%;
+  max-height: 90px;
+  margin-top: 8px;
+  object-fit: cover;
+  background: #000;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+}
+
+.card-date {
+  margin-top: 8px;
+}
+
+@media (max-width: 340px) {
+  .opt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

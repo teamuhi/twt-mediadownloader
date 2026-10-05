@@ -2,7 +2,8 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>youtube-dl Downloader</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>twtdl Downloader</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -38,49 +39,148 @@
     <div id="settings-panel" class="hidden">
       <label for="download-dir">Download location</label>
       <div class="dir-row">
-        <input type="text" id="download-dir" placeholder="C:\Users\you\Downloads\youtube-dl-extension">
+        <input type="text" id="download-dir" placeholder="C:\Users\you\Downloads\twtdl-extension">
         <button id="browse-dir" type="button">Browse…</button>
       </div>
       <div class="settings-row">
         <button id="save-settings" type="button" disabled>Save</button>
         <span id="settings-status"></span>
       </div>
+      <label class="check" for="use-x-login">
+        <input type="checkbox" id="use-x-login" checked>
+        <span>Use my x.com login for sensitive or protected tweets</span>
+      </label>
+      <div id="ytdlp-info" class="hint"></div>
     </div>
 
-    <div id="message"></div>
-
-    <div id="video-info" class="hidden">
-      <img id="thumb" class="hidden" alt="">
-      <input type="text" id="title" aria-label="Filename">
-
-      <div class="format-row">
-        <label><input type="radio" name="mode" value="mp4" checked><span>MP4</span></label>
-        <select id="mp4-quality"></select>
-      </div>
-      <div class="format-row">
-        <label><input type="radio" name="mode" value="mp3"><span>MP3</span></label>
-        <select id="mp3-quality"></select>
-      </div>
-      <div class="format-row">
-        <label><input type="radio" name="mode" value="wav"><span>WAV</span></label>
-        <span class="hint" id="wav-hint">lossless</span>
+    <div id="main">
+      <div id="tabs" class="seg" role="tablist" aria-label="Source">
+        <button type="button" role="tab" data-tab="youtube" aria-selected="true">YouTube</button>
+        <button type="button" role="tab" data-tab="twitter" aria-selected="false">Twitter</button>
       </div>
 
-      <div class="download-row">
-        <button id="download">Download</button>
-        <button id="download-to" type="button" title="Download to a specific folder" aria-label="Download to a specific folder">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">
-            <path d="M1.5 4.5a1 1 0 0 1 1-1h3.2l1.2 1.5h6.6a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/>
-          </svg>
-        </button>
-      </div>
+      <section id="yt-panel" class="panel" role="tabpanel">
+        <div class="msg"></div>
+        <div class="error-box hidden"></div>
+        <div id="video-info" class="hidden">
+          <img id="thumb" class="hidden" alt="">
+          <input type="text" id="title" aria-label="Filename">
 
-      <div id="progress-wrap" class="hidden">
-        <div id="progress-track"><div id="progress-bar"></div></div>
-        <div id="progress-text"></div>
+          <div class="format-row">
+            <label><input type="radio" name="mode" value="mp4" checked><span>MP4</span></label>
+            <select id="mp4-quality"></select>
+          </div>
+          <div class="format-row">
+            <label><input type="radio" name="mode" value="mp3"><span>MP3</span></label>
+            <select id="mp3-quality"></select>
+          </div>
+          <div class="format-row">
+            <label><input type="radio" name="mode" value="wav"><span>WAV</span></label>
+            <span class="hint" id="wav-hint">lossless</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="tw-panel" class="panel hidden" role="tabpanel">
+        <div class="msg"></div>
+        <div class="error-box hidden"></div>
+        <div id="tw-content" class="hidden">
+          <div class="tw-author">
+            <img id="tw-avatar" alt="">
+            <div class="tw-who">
+              <div class="tw-name"><span id="tw-name"></span><svg class="tw-check hidden" id="tw-verified" width="14" height="14" viewBox="0 0 18 18" aria-label="Verified"><circle cx="9" cy="9" r="9" fill="#1d9bf0"/><path d="M5 9.5l3 3 5.5-6.5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="tw-handle" id="tw-handle"></div>
+            </div>
+          </div>
+          <p id="tw-text" class="tw-text hidden"></p>
+          <div id="tw-strip" class="tw-strip hidden"></div>
+          <input type="text" id="tw-title" aria-label="Filename">
+
+          <div id="tw-kind" class="seg" role="tablist" aria-label="Download type">
+            <button type="button" role="tab" data-kind="media" aria-selected="true">Media only</button>
+            <button type="button" role="tab" data-kind="card" aria-selected="false">Tweet card</button>
+          </div>
+
+          <div id="tw-media-opts">
+            <div id="tw-formats">
+              <div class="format-row">
+                <label><input type="radio" name="twfmt" value="mp4" checked><span>MP4</span></label>
+                <select id="tw-quality"></select>
+              </div>
+              <div class="format-row">
+                <label><input type="radio" name="twfmt" value="gif"><span>GIF</span></label>
+                <span class="hint" id="tw-gif-est"></span>
+              </div>
+            </div>
+            <div id="tw-gif-opts" class="hidden">
+              <div class="opt-grid">
+                <label>Frame rate<select id="tw-fps"></select></label>
+                <label>Speed<select id="tw-speed"></select></label>
+                <label>Resolution<select id="tw-width"></select></label>
+              </div>
+              <video id="tw-preview" muted playsinline controls preload="metadata"></video>
+              <div id="tw-trim">
+                <div class="dual-range" id="tw-range">
+                  <input type="range" id="tw-start" min="0" max="1" step="0.1" value="0" aria-label="Start time">
+                  <input type="range" id="tw-end" min="0" max="1" step="0.1" value="1" aria-label="End time">
+                </div>
+                <div class="trim-row">
+                  <input type="text" id="tw-start-t" value="0:00.0" aria-label="Start time">
+                  <button type="button" id="tw-start-now" class="mini-btn" title="Use the preview's current time as the start">Set start</button>
+                  <button type="button" id="tw-end-now" class="mini-btn" title="Use the preview's current time as the end">Set end</button>
+                  <input type="text" id="tw-end-t" value="0:00.0" aria-label="End time">
+                </div>
+              </div>
+            </div>
+            <div id="tw-photo-hint" class="hint hidden">Saved as the original-quality image.</div>
+          </div>
+
+          <div id="tw-card-opts" class="hidden">
+            <div id="tw-card-theme" class="seg" role="tablist" aria-label="Card theme">
+              <button type="button" role="tab" data-theme="light" aria-selected="true">Light card</button>
+              <button type="button" role="tab" data-theme="dark" aria-selected="false">Dark card</button>
+            </div>
+            <div class="check-row">
+              <label class="check"><input type="checkbox" id="tw-show-text" checked><span>Text</span></label>
+              <label class="check"><input type="checkbox" id="tw-show-date" checked><span>Date</span></label>
+              <label class="check"><input type="checkbox" id="tw-show-verified" checked><span>Verified</span></label>
+            </div>
+            <div id="tw-card" class="tw-card" data-card-theme="light">
+              <div class="card-head">
+                <img id="card-avatar" alt="">
+                <div class="card-who">
+                  <div class="card-name"><span id="card-name"></span><svg class="tw-check hidden" id="card-verified" width="13" height="13" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#1d9bf0"/><path d="M5 9.5l3 3 5.5-6.5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                  <div class="card-handle" id="card-handle"></div>
+                </div>
+              </div>
+              <p id="card-text" class="card-text"></p>
+              <img id="card-media" class="card-media hidden" alt="">
+              <div id="card-date" class="card-date"></div>
+            </div>
+            <div class="hint" id="tw-card-out"></div>
+          </div>
+        </div>
+      </section>
+
+      <div id="actions" class="hidden">
+        <div class="download-row">
+          <button id="download">Download</button>
+          <button id="download-to" type="button" title="Download to a specific folder" aria-label="Download to a specific folder">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">
+              <path d="M1.5 4.5a1 1 0 0 1 1-1h3.2l1.2 1.5h6.6a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/>
+            </svg>
+          </button>
+        </div>
+
+        <div id="progress-wrap" class="hidden">
+          <div id="progress-track"><div id="progress-bar"></div></div>
+          <div id="progress-text"></div>
+          <div id="job-error" class="error-box hidden"></div>
+        </div>
       </div>
     </div>
   </div>
   <script src="popup.js"></script>
+  <script src="twitter.js"></script>
 </body>
 </html>

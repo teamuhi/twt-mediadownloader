@@ -13,14 +13,22 @@ from __future__ import unicode_literals
 import json
 import os
 import re
+import shutil
+import tempfile
+import time
 
 import yt_dlp
 from yt_dlp.utils import sanitize_filename
 
-DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads', 'youtube-dl-extension')
+import errors
+import render
+import twitter
 
-APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'youtube-dl-extension')
+DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads', 'twtdl-extension')
+
+APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'twtdl-extension')
 CONFIG_PATH = os.path.join(APP_DATA_DIR, 'config.json')
+TMP_DIR = os.path.join(APP_DATA_DIR, 'tmp')
 
 HTTP_URL_RE = re.compile(r'^https?://', re.IGNORECASE)
 
@@ -167,6 +175,7 @@ def fetch_formats(url):
         'video_qualities': video_qualities_from_info(info),
         'mp3_qualities': sorted(MP3_QUALITIES, key=lambda q: (q != 'best', -int(q) if q != 'best' else 0)),
         'best_audio_kbps': best_audio_kbps(info),
+        'ytdlp': errors.ytdlp_version_info(),
     }
 
 
@@ -180,6 +189,21 @@ def validate_download_request(url, mode, quality):
         raise ValueError('quality (target height) is required for mp4')
     if mode == 'mp3' and quality and str(quality) not in MP3_QUALITIES:
         raise ValueError('invalid mp3 quality')
+
+
+def make_progress_hook(on_progress):
+    """yt-dlp progress hook that reports downloading/converting updates."""
+    def hook(d):
+        if d['status'] == 'downloading':
+            total = d.get('total_bytes') or d.get('total_bytes_estimate')
+            downloaded = d.get('downloaded_bytes') or 0
+            update = {'status': 'downloading'}
+            if total:
+                update['percent'] = round(downloaded * 100 / total, 1)
+            on_progress(**update)
+        elif d['status'] == 'finished':
+            on_progress(status='converting', percent=100)
+    return hook
 
 
 def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download_dir=None, title=None):
@@ -204,7 +228,7 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
     with no console attached to show it.
     """
     if mode not in MODE_EXTENSIONS:
-        on_progress(status='error', error='Unknown mode: %s' % mode)
+        on_progress(status='error', **errors.classify_error('Unknown mode: %s' % mode))
         return
 
     target_dir = ensure_download_dir(download_dir)
@@ -215,22 +239,11 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
             with yt_dlp.YoutubeDL(probe_opts) as probe:
                 title = probe.extract_info(url, download=False).get('title') or 'video'
         except Exception as e:
-            on_progress(status='error', error=str(e))
+            on_progress(status='error', **errors.classify_error(e))
             return
 
     final_path = dedupe_path(os.path.join(target_dir, sanitize_filename(title, restricted=False) + '.' + MODE_EXTENSIONS[mode]))
     outtmpl = os.path.splitext(final_path)[0] + '.%(ext)s'
-
-    def hook(d):
-        if d['status'] == 'downloading':
-            total = d.get('total_bytes') or d.get('total_bytes_estimate')
-            downloaded = d.get('downloaded_bytes') or 0
-            update = {'status': 'downloading'}
-            if total:
-                update['percent'] = round(downloaded * 100 / total, 1)
-            on_progress(**update)
-        elif d['status'] == 'finished':
-            on_progress(status='converting', percent=100)
 
     ydl_opts = {
         'quiet': True,
@@ -241,7 +254,7 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
         # (host.py can only ever write well-formed frames there).
         'noprogress': True,
         'outtmpl': outtmpl,
-        'progress_hooks': [hook],
+        'progress_hooks': [make_progress_hook(on_progress)],
         'restrictfilenames': False,
         'noplaylist': True,
     }
@@ -275,4 +288,187 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
             path=final_path,
         )
     except Exception as e:
-        on_progress(status='error', error=str(e))
+        on_progress(status='error', **errors.classify_error(e))
+
+
+# ------------------------------------------------------------------ Twitter
+
+def make_job_tmp():
+    os.makedirs(TMP_DIR, exist_ok=True)
+    return tempfile.mkdtemp(prefix='job-', dir=TMP_DIR)
+
+
+def sweep_tmp(max_age_seconds=6 * 3600):
+    """Removes job temp dirs left behind by a crashed/killed host."""
+    try:
+        names = os.listdir(TMP_DIR)
+    except OSError:
+        return
+    now = time.time()
+    for name in names:
+        path = os.path.join(TMP_DIR, name)
+        try:
+            if now - os.path.getmtime(path) > max_age_seconds:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def _num(value, default, lo, hi):
+    try:
+        return max(lo, min(hi, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def validate_twitter_request(url, options):
+    """Returns normalized options; raises ValueError (user-facing message)."""
+    twitter.parse_tweet_id(url)
+    options = options or {}
+    kind = options.get('kind')
+    if kind not in ('media', 'card'):
+        raise ValueError('kind must be media or card')
+    fmt = options.get('format') or 'mp4'
+    if kind == 'media' and fmt not in ('mp4', 'gif', 'photo'):
+        raise ValueError('format must be mp4, gif or photo')
+    gif = options.get('gif') or {}
+    start = _num(gif.get('start'), 0.0, 0.0, 1e6)
+    end = _num(gif.get('end'), 0.0, 0.0, 1e6) or None
+    if end is not None and end <= start:
+        raise ValueError('GIF end time must be after the start time')
+    width = int(_num(gif.get('width'), 0, 0, 4096)) or None
+    card = options.get('card') or {}
+    return {
+        'kind': kind,
+        'format': fmt,
+        'mediaIndex': int(_num(options.get('mediaIndex'), 0, 0, 3)),
+        'quality': options.get('quality'),
+        'gif': {'fps': int(_num(gif.get('fps'), 15, 5, 30)), 'speed': _num(gif.get('speed'), 1.0, 0.25, 4.0),
+                'width': width, 'start': start, 'end': end},
+        'card': {'theme': 'dark' if card.get('theme') == 'dark' else 'light',
+                 'showText': card.get('showText', True) is not False,
+                 'showDate': card.get('showDate', True) is not False,
+                 'showVerified': card.get('showVerified', True) is not False},
+    }
+
+
+def get_tweet_info(url, cookies=None):
+    """Tweet metadata for the popup (variant URLs are stripped; the host
+    re-resolves them at download time)."""
+    with twitter.cookie_file(cookies) as cookiefile:
+        tweet = twitter.fetch_tweet(url, cookiefile)
+    tweet['media'] = [{k: v for k, v in m.items() if k != 'variants'} for m in tweet['media']]
+    tweet['ytdlp'] = errors.ytdlp_version_info()
+    return tweet
+
+
+def _download_video(tweet, item, quality, tmp, cookiefile, on_progress):
+    """Downloads one tweet video/GIF into `tmp`, returns its path."""
+    variant = twitter.pick_variant(item.get('variants'), quality)
+    if variant:
+        dest = os.path.join(tmp, 'video.mp4')
+        twitter.download_file(variant['url'], dest, on_progress)
+        return dest
+    # No syndication variants (yt-dlp fallback path): let yt-dlp pick.
+    height = quality or 4320
+    multi = sum(1 for m in tweet['media'] if m['videoIndex']) > 1
+    opts = {
+        'quiet': True, 'no_warnings': True, 'noprogress': True,
+        'outtmpl': os.path.join(tmp, 'video.%(ext)s'),
+        'format': 'bestvideo[height<={h}]+bestaudio/best[height<={h}]/best'.format(h=height),
+        'merge_output_format': 'mp4',
+        'progress_hooks': [make_progress_hook(on_progress)],
+        'noplaylist': not multi,
+    }
+    if multi:
+        opts['playlist_items'] = str(item['videoIndex'])
+    if cookiefile:
+        opts['cookiefile'] = cookiefile
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([tweet['url']])
+    for name in os.listdir(tmp):
+        if name.startswith('video.'):
+            return os.path.join(tmp, name)
+    raise ValueError('No video could be found in this tweet')
+
+
+def _fetch_avatar(tweet, tmp):
+    url = tweet['author'].get('avatarUrl')
+    if not url:
+        return None
+    path = os.path.join(tmp, 'avatar')
+    try:
+        twitter.download_file(url, path)
+        return path
+    except Exception:
+        return None  # card falls back to an initial-letter placeholder
+
+
+def _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile):
+    """Does the work; returns (tmp output path, extension, default title)."""
+    tweet = twitter.fetch_tweet(url, cookiefile)
+    media = tweet['media']
+    handle = tweet['author']['handle'] or 'tweet'
+    base = '%s_%s' % (handle, tweet['tweetId'])
+    kind = options['kind']
+    index = options['mediaIndex']
+    if index >= len(media):
+        index = 0
+    item = media[index] if media else None
+
+    if kind == 'media':
+        twitter.require_media(tweet)
+        if len(media) > 1:
+            base += '_%d' % (index + 1)
+        if item['type'] == 'photo':
+            out = os.path.join(tmp, 'photo')
+            twitter.download_photo(item['photoUrl'], out)
+            ext = os.path.splitext(item['photoUrl'].split('?')[0])[1].lstrip('.') or 'jpg'
+            return out, ext, base
+        video = _download_video(tweet, item, options['quality'], tmp, cookiefile, on_progress)
+        if options['format'] == 'gif':
+            g = options['gif']
+            out = os.path.join(tmp, 'out.gif')
+            render.to_gif(video, out, g['fps'], g['speed'], g['width'], g['start'], g['end'], on_progress, ffmpeg_location)
+            return out, 'gif', base
+        return video, 'mp4', base
+
+    # Tweet card
+    opts = options['card']
+    avatar = _fetch_avatar(tweet, tmp)
+    base += '_card'
+    if item and item['type'] != 'photo':
+        video = _download_video(tweet, item, options['quality'], tmp, cookiefile, on_progress)
+        aspect = item['width'] / item['height'] if item.get('width') and item.get('height') else None
+        out = os.path.join(tmp, 'card.mp4')
+        render.render_card_video(tweet, video, opts, out, tmp, avatar, aspect, item.get('duration'), on_progress, ffmpeg_location)
+        return out, 'mp4', base
+    photos = []
+    for n, m in enumerate([m for m in media if m['type'] == 'photo'][:4]):
+        path = os.path.join(tmp, 'photo-%d' % n)
+        twitter.download_photo(m['photoUrl'], path)
+        photos.append(path)
+    on_progress(status='rendering', percent=50)
+    out = os.path.join(tmp, 'card.png')
+    render.render_card_png(tweet, photos, opts, out, avatar)
+    return out, 'png', base
+
+
+def run_twitter_download(url, options, on_progress, ffmpeg_location=None, download_dir=None, title=None, cookies=None):
+    """Twitter counterpart of run_download: same on_progress protocol
+    (starting/downloading/converting|rendering/finished/error)."""
+    tmp = None
+    try:
+        options = validate_twitter_request(url, options)
+        target_dir = ensure_download_dir(download_dir)
+        tmp = make_job_tmp()
+        with twitter.cookie_file(cookies) as cookiefile:
+            out, ext, default_title = _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile)
+        final_path = dedupe_path(os.path.join(target_dir, sanitize_filename(title or default_title, restricted=False) + '.' + ext))
+        shutil.move(out, final_path)
+        on_progress(status='finished', percent=100, filename=os.path.basename(final_path), path=final_path)
+    except Exception as e:
+        on_progress(status='error', **errors.classify_error(e))
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
