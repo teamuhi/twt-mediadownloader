@@ -19,6 +19,9 @@
     start: $('tw-start'), end: $('tw-end'), startT: $('tw-start-t'), endT: $('tw-end-t'),
     photoHint: $('tw-photo-hint'),
     cardTheme: $('tw-card-theme'), showText: $('tw-show-text'), showDate: $('tw-show-date'), showVerified: $('tw-show-verified'),
+    showQuote: $('tw-show-quote'), showQuoteLabel: $('tw-show-quote-label'),
+    quote: $('card-quote'), quoteAvatar: $('quote-avatar'), quoteName: $('quote-name'), quoteHandle: $('quote-handle'),
+    quoteText: $('quote-text'), quoteMedia: $('quote-media'),
     card: $('tw-card'), cardAvatar: $('card-avatar'), cardName: $('card-name'), cardVerified: $('card-verified'),
     cardHandle: $('card-handle'), cardText: $('card-text'), cardMedia: $('card-media'), cardDate: $('card-date'),
     cardOut: $('tw-card-out'),
@@ -27,7 +30,7 @@
   let tweet = null;
   let selected = 0;
   let kind = 'media';
-  let card = { theme: 'light', showText: true, showDate: true, showVerified: true };
+  let card = { theme: 'light', showText: true, showDate: true, showVerified: true, showQuote: true };
   let trim = { start: 0, end: 0 };
 
   const currentItem = () => (tweet && tweet.media[selected]) || null;
@@ -70,10 +73,14 @@
     });
   }
 
+  // Mirrors the host's default filename: media of a quoted tweet is named
+  // after that tweet; a card is named after the tweet itself.
   function defaultTitle() {
-    const base = tweet.author.handle + '_' + tweet.tweetId;
-    const suffix = kind === 'media' && tweet.media.length > 1 ? '_' + (selected + 1) : '';
-    return base + suffix + (kind === 'card' ? '_card' : '');
+    const item = currentItem();
+    if (kind === 'card' || !item) return tweet.author.handle + '_' + tweet.tweetId + '_card';
+    const source = item.from === 'quoted' && tweet.quoted ? tweet.quoted : tweet;
+    const group = tweet.media.filter((m) => m.from === item.from);
+    return source.author.handle + '_' + source.tweetId + (group.length > 1 ? '_' + (group.indexOf(item) + 1) : '');
   }
 
   function updateGifEstimate() {
@@ -120,6 +127,7 @@
     el.showText.checked = card.showText;
     el.showDate.checked = card.showDate;
     el.showVerified.checked = card.showVerified;
+    el.showQuote.checked = card.showQuote;
 
     const { author, text, createdAt } = tweet;
     el.cardAvatar.src = author.avatarUrl || '';
@@ -131,10 +139,26 @@
     el.cardText.classList.toggle('hidden', !(card.showText && text));
 
     const item = currentItem();
-    el.cardMedia.classList.toggle('hidden', !item);
-    if (item) {
-      el.cardMedia.src = item.thumbnail || '';
-      el.cardMedia.style.aspectRatio = item.width && item.height ? String(Math.max(item.width / item.height, 0.8)) : '16 / 9';
+    const ownItem = tweet.media.find((m) => m.from === 'own');
+    el.cardMedia.classList.toggle('hidden', !ownItem);
+    if (ownItem) {
+      el.cardMedia.src = ownItem.thumbnail || '';
+      el.cardMedia.style.aspectRatio = ownItem.width && ownItem.height ? String(Math.max(ownItem.width / ownItem.height, 0.8)) : '16 / 9';
+    }
+
+    const quoted = tweet.quoted;
+    const quoteItem = tweet.media.find((m) => m.from === 'quoted');
+    el.showQuoteLabel.classList.toggle('hidden', !quoted);
+    el.quote.classList.toggle('hidden', !(quoted && card.showQuote));
+    if (quoted) {
+      el.quoteAvatar.src = quoted.author.avatarUrl || '';
+      el.quoteAvatar.classList.toggle('hidden', !quoted.author.avatarUrl);
+      el.quoteName.textContent = quoted.author.name;
+      el.quoteHandle.textContent = '@' + quoted.author.handle;
+      el.quoteText.textContent = quoted.text;
+      el.quoteText.classList.toggle('hidden', !(card.showText && quoted.text));
+      el.quoteMedia.classList.toggle('hidden', !quoteItem);
+      if (quoteItem) el.quoteMedia.src = quoteItem.thumbnail || '';
     }
 
     const date = createdAt && new Date(createdAt);
@@ -207,16 +231,19 @@
 
   function buildStrip() {
     el.strip.innerHTML = '';
-    el.strip.classList.toggle('hidden', tweet.media.length < 2);
+    // Shown for 2+ items, or when the only media belongs to the quoted post (so it's visible where it came from).
+    el.strip.classList.toggle('hidden', tweet.media.length < 2 && !(tweet.media[0] && tweet.media[0].from === 'quoted'));
     tweet.media.forEach((m, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'tw-thumb';
-      btn.title = m.type === 'photo' ? 'Photo ' + (i + 1) : m.type === 'animated_gif' ? 'GIF ' + (i + 1) : 'Video ' + (i + 1);
+      const label = m.type === 'photo' ? 'Photo' : m.type === 'animated_gif' ? 'GIF' : 'Video';
+      btn.title = (m.from === 'quoted' ? 'Quoted post: ' : '') + label + ' ' + (i + 1);
       const img = document.createElement('img');
       img.alt = '';
       img.src = m.thumbnail || '';
-      btn.append(img, textNode('span', 'tw-badge', m.type === 'photo' ? 'IMG' : m.type === 'animated_gif' ? 'GIF' : 'VID'));
+      const kindBadge = m.type === 'photo' ? 'IMG' : m.type === 'animated_gif' ? 'GIF' : 'VID';
+      btn.append(img, textNode('span', 'tw-badge', (m.from === 'quoted' ? 'QT ' : '') + kindBadge));
       btn.addEventListener('click', () => selectMedia(i));
       el.strip.appendChild(btn);
     });
@@ -257,7 +284,7 @@
     renderCardPreview();
   });
 
-  [['showText', el.showText], ['showDate', el.showDate], ['showVerified', el.showVerified]].forEach(([key, box]) => {
+  [['showText', el.showText], ['showDate', el.showDate], ['showVerified', el.showVerified], ['showQuote', el.showQuote]].forEach(([key, box]) => {
     box.addEventListener('change', () => {
       card[key] = box.checked;
       savePrefs();

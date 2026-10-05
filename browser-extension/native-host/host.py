@@ -243,7 +243,7 @@ def handle_browse_folder(msg):
         root = tkinter.Tk()
         root.withdraw()
         root.attributes('-topmost', True)
-        initial_dir = core.get_download_dir()
+        initial_dir = core.get_download_dir(msg.get('source') or 'youtube')
         path = filedialog.askdirectory(
             initialdir=initial_dir if os.path.isdir(initial_dir) else None,
             title='Choose a download location',
@@ -260,7 +260,8 @@ def handle_get_config(msg):
         'type': 'configResult',
         'requestId': request_id,
         'ok': True,
-        'downloadDir': core.get_download_dir(),
+        'downloadDir': core.get_download_dir('youtube'),
+        'twitterDownloadDir': core.get_download_dir('twitter'),
     })
 
 
@@ -268,12 +269,18 @@ def handle_set_config(msg):
     request_id = msg.get('requestId')
     config = msg.get('config') or {}
     try:
-        download_dir = core.set_download_dir(config.get('downloadDir'))
+        # Only keys present in `config` are touched, so saving one location
+        # never pins the other one to its currently-inherited value.
+        if 'downloadDir' in config:
+            core.set_download_dir(config['downloadDir'], 'youtube')
+        if 'twitterDownloadDir' in config:
+            core.set_download_dir(config['twitterDownloadDir'], 'twitter')
         send_message({
             'type': 'configResult',
             'requestId': request_id,
             'ok': True,
-            'downloadDir': download_dir,
+            'downloadDir': core.get_download_dir('youtube'),
+            'twitterDownloadDir': core.get_download_dir('twitter'),
         })
     except Exception as e:
         send_message({'type': 'configResult', 'requestId': request_id, 'ok': False, 'error': str(e)})

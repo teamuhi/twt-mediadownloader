@@ -63,7 +63,7 @@ registry location differ per browser.
 2. Load it via `chrome://extensions` (or `edge://extensions`,
    `brave://extensions`) with Developer mode on > Load unpacked > pick that
    folder. Note the extension's ID Chrome shows you -- it should be
-   `nbackfaldpbdofonhfkmhdjojfopmepk`, derived from the production signing
+   `lnpcggkomlddjkfpkbamcjkdkpnheejm`, derived from the production signing
    key at `browser-extension/installer/signing/chromium-key.pem` (see
    `extension-chromium/manifest.json`'s `key` field); if it's different,
    something about the manifest's `key` field changed and the template below

@@ -107,14 +107,17 @@ def _variants(details):
     return sorted(out, key=lambda v: (v['height'], v['bitrate']), reverse=True)
 
 
-def _media_from_syndication(items):
+def _media_from_syndication(items, origin='own', start=0):
+    """origin: 'own' for the tweet's media, 'quoted' for its quoted tweet's;
+    `start` keeps `index` unique across both lists."""
     media = []
     video_n = 0
     for d in items:
         kind = d.get('type')
         info = d.get('original_info') or {}
         item = {
-            'index': len(media),
+            'index': start + len(media),
+            'from': origin,
             'type': kind,
             'width': info.get('width'),
             'height': info.get('height'),
@@ -130,7 +133,7 @@ def _media_from_syndication(items):
             item['photoUrl'] = d.get('media_url_https')
         elif kind in ('video', 'animated_gif'):
             video_n += 1
-            item['videoIndex'] = video_n
+            item['videoIndex'] = video_n if origin == 'own' else None  # only used for the yt-dlp fallback
             millis = (d.get('video_info') or {}).get('duration_millis')
             item['duration'] = millis / 1000 if millis else None
             item['variants'] = _variants(d)
@@ -148,10 +151,10 @@ def _media_from_syndication(items):
     return media
 
 
-def _from_syndication(data, url, tweet_id):
+def _from_syndication(data, url, tweet_id, with_quote=True):
     user = data.get('user') or {}
     avatar = user.get('profile_image_url_https') or ''
-    return {
+    tweet = {
         'tweetId': tweet_id,
         'url': url,
         'author': {
@@ -163,8 +166,18 @@ def _from_syndication(data, url, tweet_id):
         'text': _clean_text(data),
         'createdAt': data.get('created_at'),
         'sensitive': bool(data.get('possibly_sensitive')),
+        'quoted': None,
         'media': _media_from_syndication(data.get('mediaDetails') or []),
     }
+    quoted = data.get('quoted_tweet')
+    if with_quote and isinstance(quoted, dict) and quoted.get('user') and quoted.get('id_str'):
+        # A quote post: keep the quoted tweet for the card, and append its
+        # media (marked from='quoted') so it can be picked and downloaded too.
+        handle = quoted['user'].get('screen_name') or 'i'
+        q = _from_syndication(quoted, 'https://x.com/%s/status/%s' % (handle, quoted['id_str']), quoted['id_str'], with_quote=False)
+        tweet['quoted'] = {k: q[k] for k in ('tweetId', 'url', 'author', 'text', 'createdAt')}
+        tweet['media'] += _media_from_syndication(quoted.get('mediaDetails') or [], 'quoted', len(tweet['media']))
+    return tweet
 
 
 def _ytdlp_opts(cookiefile, **extra):
@@ -187,6 +200,7 @@ def _from_ytdlp(url, tweet_id, cookiefile):
             continue
         media.append({
             'index': len(media),
+            'from': 'own',
             'type': 'video',
             'width': e.get('width'),
             'height': e.get('height'),
@@ -206,6 +220,7 @@ def _from_ytdlp(url, tweet_id, cookiefile):
         'text': re.sub(r'\s*https://t\.co/\w+\s*$', '', info.get('description') or info.get('title') or '').strip(),
         'createdAt': datetime.utcfromtimestamp(info['timestamp']).isoformat() + 'Z' if info.get('timestamp') else None,
         'sensitive': False,
+        'quoted': None,
         'media': media,
     }
 

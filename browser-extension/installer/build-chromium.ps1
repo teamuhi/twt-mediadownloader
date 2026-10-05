@@ -38,9 +38,9 @@ $keyPath = Join-Path $PSScriptRoot 'signing\chromium-key.pem'
 # Must match extension-chromium/manifest.json's "key" field -- both are
 # derived from signing/chromium-key.pem. If the key is ever regenerated,
 # update the manifest's "key" field to match (see native-host/README.md).
-$ExpectedExtensionId = 'nbackfaldpbdofonhfkmhdjojfopmepk'
-$UpdateManifestUrl = 'https://github.com/twtdl/twtdl-extension/releases/latest/download/update.xml'
-$CrxDownloadUrl = 'https://github.com/twtdl/twtdl-extension/releases/latest/download/twtdl-extension.crx'
+$ExpectedExtensionId = 'lnpcggkomlddjkfpkbamcjkdkpnheejm'
+$UpdateManifestUrl = 'https://github.com/teamuhi/twt-mediadownloader/releases/latest/download/update.xml'
+$CrxDownloadUrl = 'https://github.com/teamuhi/twt-mediadownloader/releases/latest/download/twtdl-extension.crx'
 
 Write-Host '--- Cleaning output directory ---'
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }

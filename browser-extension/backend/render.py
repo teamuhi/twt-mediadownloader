@@ -52,6 +52,31 @@ def run_ffmpeg(args, duration, on_progress, status, ffmpeg_location=None):
         raise FfmpegError('\n'.join(tail) or 'ffmpeg exited with code %d' % proc.returncode)
 
 
+@functools.lru_cache(maxsize=None)
+def _encoders(ffmpeg_location):
+    """Names of the encoders this ffmpeg build has (empty set if it can't run)."""
+    try:
+        out = subprocess.run([ffmpeg_exe(ffmpeg_location), '-hide_banner', '-encoders'], capture_output=True, text=True, errors='replace', timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return frozenset()
+    return frozenset(line.split()[1] for line in out.splitlines() if line.startswith(' V') and len(line.split()) > 1)
+
+
+def h264_args(ffmpeg_location, width, height):
+    """H.264 encoder args for whatever this ffmpeg has: libx264 on a GPL
+    build; the bundled LGPL build has none, so fall back to OpenH264, then
+    Windows' Media Foundation encoder, then MPEG-4 part 2."""
+    have = _encoders(ffmpeg_location)
+    bitrate = '%dk' % max(2000, min(12000, int(width * height * 30 * 0.1 / 1000)))
+    if 'libx264' in have:
+        return ['-c:v', 'libx264', '-crf', '18', '-preset', 'medium']
+    if 'libopenh264' in have:
+        return ['-c:v', 'libopenh264', '-b:v', bitrate]
+    if 'h264_mf' in have:
+        return ['-c:v', 'h264_mf', '-b:v', bitrate]
+    return ['-c:v', 'mpeg4', '-q:v', '3']
+
+
 def to_gif(src, dest, fps, speed, width, start, end, on_progress, ffmpeg_location=None):
     """Video -> GIF. `width` None keeps the source width (never upscales);
     start/end in seconds (end None = to the end)."""
@@ -83,6 +108,8 @@ LINE_H = 24
 GAP = 12
 MAX_TALL = 1.25
 GRID_H = 318
+QPAD = 12  # padding inside the quoted-tweet box
+QMEDIA_RADIUS = 12
 
 THEMES = {
     'light': {'bg': (255, 255, 255), 'text': (15, 20, 25), 'muted': (83, 100, 113), 'border': (207, 217, 222)},
@@ -210,72 +237,165 @@ def _draw_verified(img, x, cy, d):
     draw.line(pts, fill=(255, 255, 255), width=max(2, int(1.8 * s)), joint='curve')
 
 
-def build_card(tweet, opts, avatar_path, media_aspect):
-    """Returns (RGBA image, media rect (x, y, w, h) or None). The media box is
-    left empty (card background) for the caller to fill."""
-    theme = THEMES.get(opts.get('theme'), THEMES['light'])
+def _spec_aspect(spec):
+    images = spec.get('images') or []
+    if len(images) == 1:
+        return images[0].width / images[0].height
+    if images:
+        return MEDIA_W / GRID_H
+    return spec.get('aspect') or 16 / 9
+
+
+def _fit_height(width, aspect):
+    h = int(min(width / aspect, width * MAX_TALL))
+    return h - h % 2
+
+
+def _draw_name_row(img, x, top, tweet_author, size, theme, show_verified, max_w, badge, inline_handle):
+    """Name (+ verified badge) and @handle. Stacked on two 20px lines when
+    `inline_handle` is False (main header), else side by side (quote box)."""
+    S = SCALE
+    draw = ImageDraw.Draw(img)
+    name = tweet_author['name']
+    badge_w = (badge + 4 * S) if show_verified and tweet_author.get('verified') else 0
+    limit = max_w * (0.6 if inline_handle else 1) - badge_w
+    while len(name) > 1 and _width(name, 'bold', size) > limit:
+        name = name[:-1]
+    if name != tweet_author['name']:
+        name = name[:-1] + '…'
+    base = _baseline(top, 20 * S, 'bold', size)
+    end_x = _draw_text(draw, x, base, name, 'bold', size, theme['text'])
+    if badge_w:
+        _draw_verified(img, end_x + 4 * S, top + 10 * S, badge)
+        end_x += badge_w
+        draw = ImageDraw.Draw(img)
+    handle = '@' + tweet_author['handle']
+    if inline_handle:
+        hx, hbase, room = end_x + 6 * S, base, x + max_w - end_x - 6 * S
+    else:
+        hx, hbase, room = x, _baseline(top + 20 * S, 20 * S, 'regular', size), max_w
+    while len(handle) > 2 and _width(handle, 'regular', size) > room:
+        handle = handle[:-2] + '…'
+    _draw_text(draw, hx, hbase, handle, 'regular', size, theme['muted'])
+
+
+def _draw_media(img, rect, spec, radius, theme_name):
+    """Draws a static media box (one image, or a 2-4 photo grid) with rounded
+    corners + border. Returns True instead when `spec` is a video
+    placeholder: the box is only reserved (black) for ffmpeg to overlay."""
+    x, y, w, h = rect
+    images = spec.get('images') or []
+    if not images:
+        ImageDraw.Draw(img).rectangle([x, y, x + w - 1, y + h - 1], fill=(0, 0, 0, 255))
+        return True
+    if len(images) == 1:
+        box = _contain(images[0], w, h)
+    else:
+        box = Image.new('RGBA', (w, h), (0, 0, 0, 255))
+        for im, (cx, cy, cw, ch) in zip(images, _photo_cells(len(images), w, h, 2 * SCALE)):
+            box.alpha_composite(_cover(im, cw, ch), (cx, cy))
+    img.alpha_composite(box, (x, y))
+    img.alpha_composite(frame_overlay(img.size, rect, theme_name, radius))
+    return False
+
+
+def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path=None):
+    """Draws the card. `own` / `quote` are media specs for the tweet itself and
+    its quoted tweet: {'images': [PIL images]} for static media, or
+    {'aspect': float} to reserve a box for a video. Returns (RGBA image,
+    (video rect, corner radius) or None)."""
+    theme_name = opts.get('theme')
+    theme = THEMES.get(theme_name, THEMES['light'])
     S = SCALE
     W = CARD_W * S
     pad = PAD * S
     author = tweet['author']
+    show_verified = opts.get('showVerified', True)
+    show_text = opts.get('showText', True)
+    quoted = tweet.get('quoted') if opts.get('showQuote', True) else None
 
-    show_text = opts.get('showText', True) and tweet.get('text')
-    text_lines = _wrap(tweet['text'], W - 2 * pad, 'regular', 17 * S) if show_text else []
+    text_lines = _wrap(tweet['text'], W - 2 * pad, 'regular', 17 * S) if show_text and tweet.get('text') else []
     date = _format_date(tweet.get('createdAt')) if opts.get('showDate', True) else ''
 
+    # ---- layout (everything in physical px, top to bottom)
     y = pad + AVATAR * S
     text_y = date_y = 0
     if text_lines:
         text_y = y + GAP * S
         y = text_y + len(text_lines) * LINE_H * S
-    media_rect = None
-    if media_aspect:
+    own_rect = None
+    if own:
         mw = MEDIA_W * S
-        mh = int(min(mw / media_aspect, mw * MAX_TALL))
-        mh -= mh % 2
-        media_rect = (pad, y + GAP * S, mw, mh)
-        y += GAP * S + mh
+        own_rect = (pad, y + GAP * S, mw, _fit_height(mw, _spec_aspect(own)))
+        y += GAP * S + own_rect[3]
+
+    q = None
+    if quoted:
+        inner_x = pad + QPAD * S
+        inner_w = MEDIA_W * S - 2 * QPAD * S
+        box_y = y + GAP * S
+        cy = box_y + QPAD * S
+        q = {'box': (pad, box_y), 'head_y': cy, 'inner_x': inner_x, 'inner_w': inner_w, 'lines': [], 'text_y': 0, 'media': None}
+        cy += 20 * S
+        if show_text and quoted.get('text'):
+            q['lines'] = _wrap(quoted['text'], inner_w, 'regular', 15 * S)
+            q['text_y'] = cy + 4 * S
+            cy = q['text_y'] + len(q['lines']) * 20 * S
+        if quote:
+            q['media'] = (inner_x, cy + 8 * S, inner_w, _fit_height(inner_w, _spec_aspect(quote)))
+            cy += 8 * S + q['media'][3]
+        q['size'] = (MEDIA_W * S, cy + QPAD * S - box_y)
+        y = box_y + q['size'][1]
+
     if date:
         date_y = y + GAP * S
         y = date_y + 20 * S
     H = y + pad
     H += H % 2
 
+    # ---- draw
     img = Image.new('RGBA', (W, H), theme['bg'] + (255,))
     img.alpha_composite(_circle_avatar(avatar_path, AVATAR * S, author['name'], theme), (pad, pad))
-    draw = ImageDraw.Draw(img)
-
     name_x = pad + (AVATAR + 12) * S
-    avail = W - pad - name_x - (22 * S if opts.get('showVerified', True) and author.get('verified') else 0)
-    name = author['name']
-    while len(name) > 1 and _width(name, 'bold', 15 * S) > avail:
-        name = name[:-1]
-    if name != author['name']:
-        name = name[:-1] + '\u2026'
-    name_base = _baseline(pad, 20 * S, 'bold', 15 * S)
-    end_x = _draw_text(draw, name_x, name_base, name, 'bold', 15 * S, theme['text'])
-    if opts.get('showVerified', True) and author.get('verified'):
-        _draw_verified(img, end_x + 4 * S, pad + 10 * S, 18 * S)
-        draw = ImageDraw.Draw(img)
-    _draw_text(draw, name_x, _baseline(pad + 20 * S, 20 * S, 'regular', 15 * S), '@' + author['handle'], 'regular', 15 * S, theme['muted'])
-
+    _draw_name_row(img, name_x, pad, author, 15 * S, theme, show_verified, W - pad - name_x, 18 * S, False)
+    draw = ImageDraw.Draw(img)
     for i, line in enumerate(text_lines):
         _draw_text(draw, pad, _baseline(text_y + i * LINE_H * S, LINE_H * S, 'regular', 17 * S), line, 'regular', 17 * S, theme['text'])
+
+    video = None
+    if own_rect:
+        if _draw_media(img, own_rect, own, RADIUS * S, theme_name):
+            video = (own_rect, RADIUS * S)
+
+    if q:
+        bx, by = q['box']
+        bw, bh = q['size']
+        outer = _rounded_mask((bw, bh), RADIUS * S)
+        _paste_color(img, theme['border'], ImageChops.subtract(outer, _rounded_mask((bw, bh), RADIUS * S, inset=BORDER * S)), (bx, by))
+        qa = 20 * S
+        img.alpha_composite(_circle_avatar(quote_avatar_path, qa, quoted['author']['name'], theme), (q['inner_x'], q['head_y']))
+        text_x = q['inner_x'] + qa + 8 * S
+        _draw_name_row(img, text_x, q['head_y'], quoted['author'], 15 * S, theme, show_verified, q['inner_x'] + q['inner_w'] - text_x, 16 * S, True)
+        draw = ImageDraw.Draw(img)
+        for i, line in enumerate(q['lines']):
+            _draw_text(draw, q['inner_x'], _baseline(q['text_y'] + i * 20 * S, 20 * S, 'regular', 15 * S), line, 'regular', 15 * S, theme['text'])
+        if q['media'] and _draw_media(img, q['media'], quote, QMEDIA_RADIUS * S, theme_name):
+            video = (q['media'], QMEDIA_RADIUS * S)
+
     if date:
-        _draw_text(draw, pad, _baseline(date_y, 20 * S, 'regular', 15 * S), date, 'regular', 15 * S, theme['muted'])
-    return img, media_rect
+        _draw_text(ImageDraw.Draw(img), pad, _baseline(date_y, 20 * S, 'regular', 15 * S), date, 'regular', 15 * S, theme['muted'])
+    return img, video
 
 
-def frame_overlay(size, rect, theme_name):
-    """Transparent overlay that fills the media box's rounded corners with the
+def frame_overlay(size, rect, theme_name, radius=RADIUS * SCALE):
+    """Transparent overlay that fills a media box's rounded corners with the
     card background and draws the border ring."""
     theme = THEMES.get(theme_name, THEMES['light'])
     x, y, w, h = rect
-    r = RADIUS * SCALE
-    outer = _rounded_mask((w, h), r)
+    outer = _rounded_mask((w, h), radius)
     ov = Image.new('RGBA', size, (0, 0, 0, 0))
     _paste_color(ov, theme['bg'], ImageChops.invert(outer), (x, y))
-    ring = ImageChops.subtract(outer, _rounded_mask((w, h), r, inset=BORDER * SCALE))
+    ring = ImageChops.subtract(outer, _rounded_mask((w, h), radius, inset=BORDER * SCALE))
     _paste_color(ov, theme['border'], ring, (x, y))
     return ov
 
@@ -305,37 +425,33 @@ def _photo_cells(n, w, h, gap):
             (0, half_h + gap, half_w, h - half_h - gap), (half_w + gap, half_h + gap, w - half_w - gap, h - half_h - gap)]
 
 
-def render_card_png(tweet, photo_paths, opts, dest, avatar_path=None):
-    """Photo (or text-only) card -> PNG at `dest`."""
-    photos = [Image.open(p).convert('RGBA') for p in photo_paths[:4]]
-    aspect = None
-    if len(photos) == 1:
-        aspect = photos[0].width / photos[0].height
-    elif photos:
-        aspect = MEDIA_W / GRID_H
-    img, rect = build_card(tweet, opts, avatar_path, aspect)
-    if rect:
-        x, y, w, h = rect
-        if len(photos) == 1:
-            box = _contain(photos[0], w, h)
-        else:
-            box = Image.new('RGBA', (w, h), (0, 0, 0, 255))
-            for im, (cx, cy, cw, ch) in zip(photos, _photo_cells(len(photos), w, h, 2 * SCALE)):
-                box.alpha_composite(_cover(im, cw, ch), (cx, cy))
-        img.alpha_composite(box, (x, y))
-        img.alpha_composite(frame_overlay(img.size, rect, opts.get('theme')))
+def _spec(paths):
+    images = [Image.open(p).convert('RGBA') for p in (paths or [])[:4]]
+    return {'images': images} if images else None
+
+
+def render_card_png(tweet, own_paths, quote_paths, opts, dest, avatar_path=None, quote_avatar_path=None):
+    """Photo / text-only card (own and quoted media as static images) -> PNG."""
+    img, _video = build_card(tweet, opts, avatar_path, _spec(own_paths), _spec(quote_paths), quote_avatar_path)
     img.convert('RGB').save(dest, 'PNG')
 
 
-def render_card_video(tweet, video_path, opts, dest, tmp_dir, avatar_path, aspect, duration, on_progress, ffmpeg_location=None):
-    """Video/GIF card -> MP4 at `dest` (audio kept when present)."""
-    img, rect = build_card(tweet, opts, avatar_path, aspect or 16 / 9)
-    x, y, w, h = rect
-    ImageDraw.Draw(img).rectangle([x, y, x + w - 1, y + h - 1], fill=(0, 0, 0, 255))
+def render_card_video(tweet, video_path, target, opts, dest, tmp_dir, avatar_path, quote_avatar_path,
+                      own_paths, quote_paths, aspect, duration, on_progress, ffmpeg_location=None):
+    """Video/GIF card -> MP4 (audio kept when present). `target` says which
+    box the playing video goes in, 'own' or 'quote' (the quoted tweet's
+    video); the other box shows its media as static images."""
+    if target == 'quote' and not (tweet.get('quoted') and opts.get('showQuote', True)):
+        target, own_paths = 'own', []  # quote box hidden: play it in the main box instead
+    placeholder = {'aspect': aspect or 16 / 9}
+    own = placeholder if target == 'own' else _spec(own_paths)
+    quote = placeholder if target == 'quote' else _spec(quote_paths)
+    img, video = build_card(tweet, opts, avatar_path, own, quote, quote_avatar_path)
+    (x, y, w, h), radius = video
     bg_path = os.path.join(tmp_dir, 'card-bg.png')
     fg_path = os.path.join(tmp_dir, 'card-fg.png')
     img.convert('RGB').save(bg_path, 'PNG')
-    frame_overlay(img.size, rect, opts.get('theme')).save(fg_path, 'PNG')
+    frame_overlay(img.size, (x, y, w, h), opts.get('theme'), radius).save(fg_path, 'PNG')
 
     graph = (
         '[1:v]scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v];'
@@ -343,6 +459,6 @@ def render_card_video(tweet, video_path, opts, dest, tmp_dir, avatar_path, aspec
     ) % (w, h, w, h, x, y)
     args = ['-loop', '1', '-framerate', '30', '-i', bg_path, '-i', video_path, '-i', fg_path,
             '-filter_complex', graph, '-map', '[out]', '-map', '1:a?',
-            '-c:v', 'libx264', '-crf', '18', '-preset', 'medium', '-c:a', 'aac', '-movflags', '+faststart',
+            *h264_args(ffmpeg_location, img.width, img.height), '-c:a', 'aac', '-movflags', '+faststart',
             '-shortest', dest]
     run_ffmpeg(args, duration, on_progress, 'rendering', ffmpeg_location)

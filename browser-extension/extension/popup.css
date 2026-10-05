@@ -164,12 +164,16 @@ header {
   gap: 6px;
 }
 
+.dir-row + label {
+  margin-top: 10px;
+}
+
 .dir-row input[type="text"] {
   flex: 1;
   min-width: 0;
 }
 
-#browse-dir {
+.browse-btn {
   flex-shrink: 0;
   font-family: inherit;
   font-size: 12px;
@@ -182,15 +186,15 @@ header {
   transition: border-color var(--duration-base) ease, transform var(--duration-fast) ease;
 }
 
-#browse-dir:hover {
+.browse-btn:hover {
   border-color: var(--text-muted);
 }
 
-#browse-dir:active {
+.browse-btn:active {
   transform: scale(0.96);
 }
 
-#browse-dir:disabled {
+.browse-btn:disabled {
   color: var(--text-muted);
   cursor: default;
   transform: none;
@@ -474,7 +478,7 @@ select:focus {
 
 @media (prefers-reduced-motion: reduce) {
   .icon-btn:active,
-  #browse-dir:active,
+  .browse-btn:active,
   #save-settings:active,
   #download:active,
   #download-to:active,
@@ -758,6 +762,8 @@ select:focus {
 
 /* classes above set `display`, which would otherwise beat the generic .hidden */
 .tw-author.hidden,
+.check.hidden,
+.card-quote.hidden,
 .tw-strip.hidden,
 .tw-text.hidden,
 .card-media.hidden,
@@ -1004,6 +1010,46 @@ select:focus {
 
 .card-date {
   margin-top: 8px;
+}
+
+.card-quote {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+}
+
+#quote-avatar {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--c-border);
+}
+
+.card-qname {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#quote-name {
+  font-weight: 700;
+}
+
+.card-quote .card-text {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.card-quote .card-media {
+  max-height: 70px;
+  margin-top: 6px;
+  border-radius: 8px;
 }
 
 @media (max-width: 340px) {

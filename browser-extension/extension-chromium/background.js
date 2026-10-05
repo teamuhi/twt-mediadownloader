@@ -329,7 +329,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'browseFolder') {
-    sendRequest({ type: 'browseFolder', requestId: newRequestId() })
+    sendRequest({ type: 'browseFolder', requestId: newRequestId(), source: message.source })
       .then(sendResponse, (err) => sendResponse(failure(err)));
     return true;
   }
