@@ -269,6 +269,42 @@ function onPortDisconnect() {
   persistState();
 }
 
+// Which config field holds each tab's save location.
+const DIR_KEYS = { youtube: 'downloadDir', twitter: 'twitterDownloadDir', web: 'webDownloadDir' };
+
+// Shows the host's folder dialog; resolves to the chosen path, or null if cancelled.
+// Runs here rather than in the popup because the dialog steals focus, which
+// closes the popup before the answer arrives.
+function browseFolder(source) {
+  return sendRequest({ type: 'browseFolder', requestId: newRequestId(), source }).then((res) => res.path || null);
+}
+
+async function startJob(message) {
+  await stateLoaded;
+  const requestId = newRequestId();
+  const { type, tabUrl, ...params } = message;
+  console.log('[bg] startJob: requestId=', requestId, 'tabUrl=', tabUrl, 'url=', message.url);
+  requestIdToTabUrl[requestId] = tabUrl;
+  jobs[tabUrl] = {
+    requestId,
+    title: message.title,
+    mode: message.mode,
+    source: message.source || 'youtube',
+    status: 'starting',
+    percent: 0,
+  };
+  try {
+    const cookies = message.source === 'twitter' ? await getXCookies() : null;
+    ensurePort().postMessage({ ...params, type: 'download', requestId, cookies });
+  } catch (e) {
+    console.error('[bg] startJob: postMessage threw', e);
+    jobs[tabUrl].status = 'error';
+    jobs[tabUrl].error = e.message;
+  }
+  persistState();
+  broadcast(tabUrl);
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'getFormats') {
     stateLoaded.then(() => sendRequest({ type: 'formats', requestId: newRequestId(), url: message.url }))
@@ -284,31 +320,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'startDownload') {
-    stateLoaded.then(async () => {
-      const requestId = newRequestId();
-      const { type, tabUrl, ...params } = message;
-      console.log('[bg] startDownload: requestId=', requestId, 'tabUrl=', tabUrl, 'url=', message.url);
-      requestIdToTabUrl[requestId] = tabUrl;
-      jobs[tabUrl] = {
-        requestId,
-        title: message.title,
-        mode: message.mode,
-        source: message.source || 'youtube',
-        status: 'starting',
-        percent: 0,
-      };
-      try {
-        const cookies = message.source === 'twitter' ? await getXCookies() : null;
-        ensurePort().postMessage({ ...params, type: 'download', requestId, cookies });
-      } catch (e) {
-        console.error('[bg] startDownload: postMessage threw', e);
-        jobs[tabUrl].status = 'error';
-        jobs[tabUrl].error = e.message;
-      }
-      persistState();
-      broadcast(tabUrl);
-    });
+    startJob(message);
     return false;
+  }
+
+  if (message.type === 'startDownloadTo') {
+    browseFolder(message.source)
+      .then((path) => (path ? startJob({ ...message, downloadDir: path }) : null))
+      .catch(async (err) => {
+        await stateLoaded;
+        jobs[message.tabUrl] = { source: message.source, status: 'error', percent: 0, error: 'Could not choose a folder: ' + err.message };
+        persistState();
+        broadcast(message.tabUrl);
+        notify(jobs[message.tabUrl]);
+      })
+      .then(() => sendResponse());
+    return true;
+  }
+
+  if (message.type === 'pickDir') {
+    browseFolder(message.source)
+      .then((path) => {
+        if (!path) return { cancelled: true };
+        return sendRequest({ type: 'setConfig', requestId: newRequestId(), config: { [DIR_KEYS[message.source]]: path } });
+      })
+      .then(sendResponse, (err) => sendResponse(failure(err)));
+    return true;
+  }
+
+  if (message.type === 'scanPage') {
+    chrome.scripting.executeScript({ target: { tabId: message.tabId }, files: ['scan.js'] })
+      .then((res) => sendResponse(res[0].result))
+      .catch((e) => sendResponse(failure(Object.assign(new Error("This page can't be scanned."), {
+        code: 'E_UNSUPPORTED_URL',
+        hint: 'Reload the page, then open nickel.tools from the toolbar again.',
+        detail: e.message,
+      }))));
+    return true;
   }
 
   if (message.type === 'getJob') {

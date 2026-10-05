@@ -1,9 +1,11 @@
 // Shared popup logic: tab switching, job/progress + error rendering, settings
 // and theme. The YouTube and Twitter panels live in youtube.js / twitter.js and
-// plug in through the `panels` registry below.
+// plug in through the `panels` registry below. The Web panel lives in web.js.
 
 const HTTP_URL_RE = /^https?:\/\//i;
 const TWEET_URL_RE = /^https?:\/\/(?:[\w-]+\.)?(?:x|twitter)\.com\/(?:[^/?#]+|i\/web)\/status(?:es)?\/\d+/i;
+
+const X_HOST_RE = /^https?:\/\/(?:[\w-]+\.)?(?:x|twitter)\.com\//i;
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,6 +18,7 @@ const progressText = $('progress-text');
 const jobErrorEl = $('job-error');
 
 let currentTabUrlValue = null;
+let currentTabId = null;
 let activeTab = 'youtube';
 let lastJob = null;
 
@@ -43,8 +46,13 @@ function send(message) {
   });
 }
 
-function currentTabUrl() {
-  return browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0].url);
+// The tab being downloaded from: the one the popup was opened on, or the one a
+// detached window was opened for (?tabId=...).
+const detachedTabId = Number(new URLSearchParams(location.search).get('tabId')) || null;
+
+function currentTab() {
+  if (detachedTabId) return browser.tabs.get(detachedTabId);
+  return browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0]);
 }
 
 function formatBytes(bytes) {
@@ -122,8 +130,9 @@ function syncActions() {
   const panel = panels[activeTab];
   actionsEl.classList.toggle('hidden', panel.state !== 'ready');
   const busy = lastJob && lastJob.status !== 'finished' && lastJob.status !== 'error';
-  downloadBtn.disabled = !!busy;
-  downloadToBtn.disabled = !!busy;
+  const blocked = !!busy || (panel.canDownload && !panel.canDownload());
+  downloadBtn.disabled = blocked;
+  downloadToBtn.disabled = blocked;
   refreshOutput();
 }
 
@@ -132,7 +141,7 @@ function loadPanel(name) {
   if (panel.state) return;
   if (!panel.accepts(currentTabUrlValue)) {
     panel.state = 'unsupported';
-    panelMessage(name, panel.hint);
+    panelMessage(name, typeof panel.hint === 'function' ? panel.hint(currentTabUrlValue) : panel.hint);
     return;
   }
   panel.state = 'loading';
@@ -147,12 +156,16 @@ function loadPanel(name) {
       panel.state = 'error';
       panelError(name, err);
       syncActions();
+      // Not a video page: the Web tab can still list its images and files.
+      if (name === 'youtube' && err.code === 'E_UNSUPPORTED_URL' && activeTab === name && panels.web && panels.web.accepts(currentTabUrlValue)) {
+        selectTab('web');
+      }
     });
 }
 
 function selectTab(name) {
   activeTab = name;
-  document.body.dataset.tab = name; // the Twitter tab gets a wider popup
+  document.body.dataset.tab = name; // the Twitter and Web tabs get a wider popup
   document.querySelectorAll('#tabs [role="tab"]').forEach((tab) => {
     tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
   });
@@ -180,9 +193,9 @@ function renderJob(job) {
   if (job.status === 'starting') {
     progressText.textContent = 'Starting…';
   } else if (job.status === 'downloading') {
-    progressText.textContent = 'Downloading… ' + percent + '%';
+    progressText.textContent = 'Downloading' + (job.total > 1 ? ' ' + job.item + ' of ' + job.total : '') + '… ' + percent + '%';
   } else if (job.status === 'converting') {
-    progressText.textContent = 'Converting…' + (job.source === 'twitter' ? ' ' + percent + '%' : '');
+    progressText.textContent = 'Converting' + (job.total > 1 ? ' ' + job.item + ' of ' + job.total : '') + '…' + (job.source === 'twitter' ? ' ' + percent + '%' : '');
   } else if (job.status === 'tagging') {
     progressText.textContent = 'Writing tags…';
   } else if (job.status === 'rendering') {
@@ -207,27 +220,30 @@ browser.runtime.onMessage.addListener((message) => {
   }
 });
 
-function startDownload(downloadDir) {
+function buildPayload(type) {
   const url = currentTabUrlValue;
-  renderJob({ status: 'starting', percent: 0, source: activeTab });
-  const payload = Object.assign({ type: 'startDownload', tabUrl: url, url, source: activeTab }, panels[activeTab].payload());
-  if (downloadDir) payload.downloadDir = downloadDir;
-  send(payload).catch((err) => renderJob({ status: 'error', error: err.message, source: activeTab }));
+  return Object.assign({ type, tabUrl: url, url, source: activeTab }, panels[activeTab].payload());
 }
 
+function startDownload() {
+  renderJob({ status: 'starting', percent: 0, source: activeTab });
+  send(buildPayload('startDownload')).catch((err) => renderJob({ status: 'error', error: err.message, source: activeTab }));
+}
+
+// The folder dialog steals focus, which closes the popup, so the background
+// script owns the whole sequence (pick a folder, then start the job). If the
+// popup is still open afterwards it just follows the job's updates.
 function startDownloadTo() {
   downloadToBtn.disabled = true;
-  send({ type: 'browseFolder', source: activeTab })
-    .then((res) => {
-      syncActions();
-      if (res && res.path) startDownload(res.path);
-    })
+  send(buildPayload('startDownloadTo'))
+    .then(() => syncActions())
     .catch((err) => {
-      renderJob({ status: 'error', error: 'Could not open folder picker: ' + err.message, source: activeTab });
+      syncActions();
+      renderJob({ status: 'error', error: 'Could not start the download: ' + err.message, source: activeTab });
     });
 }
 
-downloadBtn.addEventListener('click', () => startDownload());
+downloadBtn.addEventListener('click', startDownload);
 downloadToBtn.addEventListener('click', startDownloadTo);
 
 // --------------------------------------------------------------- settings
@@ -246,6 +262,7 @@ const useXLoginEl = $('use-x-login');
 const dirFields = {
   youtube: { input: $('download-dir'), browse: $('browse-dir'), key: 'downloadDir', loaded: '' },
   twitter: { input: $('twitter-dir'), browse: $('browse-twitter-dir'), key: 'twitterDownloadDir', loaded: '' },
+  web: { input: $('web-dir'), browse: $('browse-web-dir'), key: 'webDownloadDir', loaded: '' },
 };
 
 function setSettingsStatus(text) {
@@ -326,25 +343,40 @@ settingsToggleBtn.addEventListener('click', () => {
 
 saveSettingsBtn.addEventListener('click', saveSettings);
 
+// The background script picks the folder and saves it (the popup may close
+// while the dialog is open); if we are still here, show the stored result.
 Object.entries(dirFields).forEach(([name, field]) => {
   field.browse.addEventListener('click', () => {
     field.browse.disabled = true;
     setSettingsStatus('Choose a folder…');
-    send({ type: 'browseFolder', source: name })
+    send({ type: 'pickDir', source: name })
       .then((res) => {
         field.browse.disabled = false;
-        if (res && res.path) {
-          field.input.value = res.path;
-          saveSettings(); // auto-save: a picked folder is already a deliberate choice
-        } else {
+        if (res && res.cancelled) {
           setSettingsStatus(''); // user cancelled the dialog
+          return;
         }
+        applyConfig(res);
+        setSettingsStatus('Saved');
+        setTimeout(() => setSettingsStatus(''), 1500);
       })
       .catch((err) => {
         field.browse.disabled = false;
         setSettingsStatus('Error: ' + err.message);
       });
   });
+});
+
+// -------------------------------------------------------------- pop-out
+
+const popoutBtn = $('popout-btn');
+if (detachedTabId) document.body.classList.add('is-detached');
+if (!browser.windows) popoutBtn.classList.add('hidden'); // e.g. Firefox Android
+
+// A popup closes the moment it loses focus; a window of its own does not.
+popoutBtn.addEventListener('click', () => {
+  browser.windows.create({ url: 'popup.html?tabId=' + currentTabId, type: 'popup', width: 520, height: 700 })
+    .then(() => window.close());
 });
 
 // ------------------------------------------------------------------ theme
@@ -369,8 +401,10 @@ function init() {
     applyTheme(stored.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   });
 
-  currentTabUrl().then((url) => {
+  currentTab().then((tab) => {
+    const url = tab.url;
     currentTabUrlValue = url;
+    currentTabId = tab.id;
     send({ type: 'getJob', tabUrl: url }).then((job) => {
       if (job) lastJob = job;
       // A tweet link opens on the Twitter tab; anything else on YouTube.

@@ -138,6 +138,41 @@ function onPortDisconnect() {
   }
 }
 
+// Which config field holds each tab's save location.
+const DIR_KEYS = { youtube: 'downloadDir', twitter: 'twitterDownloadDir', web: 'webDownloadDir' };
+
+// Shows the host's folder dialog; resolves to the chosen path, or null if cancelled.
+// Runs here rather than in the popup because the dialog steals focus, which
+// closes the popup before the answer arrives.
+function browseFolder(source) {
+  return sendRequest({ type: 'browseFolder', requestId: newRequestId(), source }).then((res) => res.path || null);
+}
+
+function startJob(message) {
+  const requestId = newRequestId();
+  const { type, tabUrl, ...params } = message;
+  requestIdToTabUrl[requestId] = tabUrl;
+  jobs[tabUrl] = {
+    requestId,
+    title: message.title,
+    mode: message.mode,
+    source: message.source || 'youtube',
+    status: 'starting',
+    percent: 0,
+  };
+  (async () => {
+    try {
+      const cookies = message.source === 'twitter' ? await getXCookies() : null;
+      ensurePort().postMessage({ ...params, type: 'download', requestId, cookies });
+    } catch (e) {
+      jobs[tabUrl].status = 'error';
+      jobs[tabUrl].error = e.message;
+      broadcast(tabUrl);
+    }
+  })();
+  broadcast(tabUrl);
+}
+
 browser.runtime.onMessage.addListener((message) => {
   if (message.type === 'getFormats') {
     return sendRequest({ type: 'formats', requestId: newRequestId(), url: message.url }).catch(failure);
@@ -150,29 +185,39 @@ browser.runtime.onMessage.addListener((message) => {
   }
 
   if (message.type === 'startDownload') {
-    const requestId = newRequestId();
-    const { type, tabUrl, ...params } = message;
-    requestIdToTabUrl[requestId] = tabUrl;
-    jobs[tabUrl] = {
-      requestId,
-      title: message.title,
-      mode: message.mode,
-      source: message.source || 'youtube',
-      status: 'starting',
-      percent: 0,
-    };
-    (async () => {
-      try {
-        const cookies = message.source === 'twitter' ? await getXCookies() : null;
-        ensurePort().postMessage({ ...params, type: 'download', requestId, cookies });
-      } catch (e) {
-        jobs[tabUrl].status = 'error';
-        jobs[tabUrl].error = e.message;
-        broadcast(tabUrl);
-      }
-    })();
-    broadcast(tabUrl);
+    startJob(message);
     return;
+  }
+
+  if (message.type === 'startDownloadTo') {
+    return browseFolder(message.source)
+      .then((path) => {
+        if (path) startJob({ ...message, downloadDir: path });
+      })
+      .catch((err) => {
+        jobs[message.tabUrl] = { source: message.source, status: 'error', percent: 0, error: 'Could not choose a folder: ' + err.message };
+        broadcast(message.tabUrl);
+        notify(jobs[message.tabUrl]);
+      });
+  }
+
+  if (message.type === 'pickDir') {
+    return browseFolder(message.source)
+      .then((path) => {
+        if (!path) return { cancelled: true };
+        return sendRequest({ type: 'setConfig', requestId: newRequestId(), config: { [DIR_KEYS[message.source]]: path } });
+      })
+      .catch(failure);
+  }
+
+  if (message.type === 'scanPage') {
+    return browser.tabs.executeScript(message.tabId, { file: 'scan.js' })
+      .then((res) => res[0])
+      .catch((e) => failure(Object.assign(new Error("This page can't be scanned."), {
+        code: 'E_UNSUPPORTED_URL',
+        hint: 'Reload the page, then open nickel.tools from the toolbar again.',
+        detail: e.message,
+      })));
   }
 
   if (message.type === 'getJob') {

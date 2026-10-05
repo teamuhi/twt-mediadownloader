@@ -69,12 +69,12 @@ def save_config(config):
         json.dump(config, f)
 
 
-CONFIG_DIR_KEYS = {'youtube': 'download_dir', 'twitter': 'twitter_download_dir'}
+CONFIG_DIR_KEYS = {'youtube': 'download_dir', 'twitter': 'twitter_download_dir', 'web': 'web_download_dir'}
 
 
 def get_download_dir(source='youtube'):
-    """Save location for `source` ('youtube' or 'twitter'). An unset Twitter
-    location follows the general one, so existing setups keep working."""
+    """Save location for `source` ('youtube', 'twitter' or 'web'). An unset
+    Twitter/Web location follows the general one, so existing setups keep working."""
     config = load_config()
     return config.get(CONFIG_DIR_KEYS.get(source)) or config.get('download_dir') or DEFAULT_DOWNLOAD_DIR
 
@@ -370,7 +370,7 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
     try:
         mode, quality, audio = validate_download_request(url, mode, quality, audio)
     except ValueError as e:
-        on_progress(status='error', **errors.classify_error(e))
+        on_progress(status='error', **errors.classify_error(e, 'youtube'))
         return
 
     target_dir = ensure_download_dir(download_dir)
@@ -383,7 +383,7 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
                 probed = probe.extract_info(url, download=False)
             title = default_audio_name(auto_meta(probed)) if audio else probed.get('title') or 'video'
         except Exception as e:
-            on_progress(status='error', **errors.classify_error(e))
+            on_progress(status='error', **errors.classify_error(e, 'youtube'))
             return
 
     final_path = dedupe_path(os.path.join(target_dir, sanitize_filename(title, restricted=False) + '.' + ext))
@@ -431,7 +431,7 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
                 done['warning'] = warning
         on_progress(status='finished', percent=100, **done)
     except Exception as e:
-        on_progress(status='error', **errors.classify_error(e))
+        on_progress(status='error', **errors.classify_error(e, 'youtube'))
 
 
 # ------------------------------------------------------------------ Twitter
@@ -646,7 +646,7 @@ def run_twitter_download(url, options, on_progress, ffmpeg_location=None, downlo
         shutil.move(out, final_path)
         on_progress(status='finished', percent=100, filename=os.path.basename(final_path), path=final_path)
     except Exception as e:
-        on_progress(status='error', **errors.classify_error(e))
+        on_progress(status='error', **errors.classify_error(e, 'twitter'))
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)

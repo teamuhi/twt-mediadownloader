@@ -1,4 +1,4 @@
-# twtdl browser extension
+# nickel.tools browser extension
 
 Adds a toolbar button that downloads Twitter/X media (as-is, as a GIF, or
 rendered into a tweet card) and, on a second tab, the video or audio on
@@ -232,7 +232,7 @@ top-level `LICENSE` file for this repository's own code.
 
 ## Uninstalling
 
-Uninstall "twtdl Downloader" from Windows Settings > Apps, same as any
+Uninstall "nickel.tools" from Windows Settings > Apps, same as any
 other program. This removes the installed files, every native messaging
 registry entry it created, the Firefox policy entry, and the
 `ExtensionInstallForcelist` entry for each Chromium browser it was

@@ -173,7 +173,7 @@
     // Without an audio-capable ffmpeg there is nothing to offer under Audio.
     const audioTab = el.kind.querySelector('[data-kind="audio"]');
     audioTab.disabled = !formats().length;
-    audioTab.title = formats().length ? '' : outdated ? 'Update the twtdl native host to enable audio' : 'Audio needs an ffmpeg build with audio encoders';
+    audioTab.title = formats().length ? '' : outdated ? 'Update the nickel.tools native host to enable audio' : 'Audio needs an ffmpeg build with audio encoders';
     if (!formats().length) kind = 'video';
     if (formats().length) {
       prefs.format = (formats().find((f) => f.id === prefs.format) || formats()[0]).id;
@@ -268,8 +268,10 @@
     el: $('yt-panel'),
     extEl: el.ext,
     output,
-    accepts: (url) => HTTP_URL_RE.test(url),
-    hint: 'Open a web page with a video or audio to download it.',
+    accepts: (url) => HTTP_URL_RE.test(url) && !X_HOST_RE.test(url),
+    hint: (url) => (X_HOST_RE.test(url)
+      ? 'On X, open a tweet and use the X / Twitter tab.'
+      : 'Open a web page with a video or audio to download it.'),
     loadingText: 'Loading media info…',
     load: (url) => Promise.all([
       browser.storage.local.get(['ytKind', 'ytAudio']),
