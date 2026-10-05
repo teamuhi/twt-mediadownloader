@@ -1,11 +1,11 @@
 {
   "manifest_version": 2,
-  "name": "youtube-dl Downloader",
-  "version": "0.5.0",
-  "description": "Download video or audio from the current tab as MP4, MP3, or WAV, with quality options, via a native messaging host running yt-dlp.",
+  "name": "twtdl Downloader",
+  "version": "0.6.0",
+  "description": "Download Twitter/X media (video, GIF, photo), tweet cards, and YouTube video/audio, via a native messaging host running yt-dlp.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "youtube-dl-extension@local",
+      "id": "twtdl-extension@local",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": ["none"]
@@ -16,7 +16,10 @@
     "activeTab",
     "notifications",
     "nativeMessaging",
-    "storage"
+    "storage",
+    "cookies",
+    "*://*.x.com/*",
+    "*://*.twitter.com/*"
   ],
   "background": {
     "scripts": ["background.js"],
@@ -31,7 +34,7 @@
   },
   "browser_action": {
     "default_popup": "popup.html",
-    "default_title": "Download video or audio from this page",
+    "default_title": "Download media from this page",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"

@@ -41,7 +41,7 @@ browser-extension/backend/token.txt
 
 # Native host: machine-specific, generated from the checked-in .template
 browser-extension/native-host/host_dev.bat
-browser-extension/native-host/com.leconnn.youtube_dl_extension.json
+browser-extension/native-host/com.twtdl.twtdl_extension.json
 browser-extension/native-host/vendor/ffmpeg/
 browser-extension/native-host/build/
 browser-extension/native-host/dist/
@@ -49,7 +49,7 @@ browser-extension/native-host/dist/
 # Installer: built by browser-extension/installer/build.ps1, published as
 # GitHub Release assets rather than committed
 browser-extension/installer/Output/
-browser-extension/installer/youtube-dl-extension.xpi
+browser-extension/installer/twtdl-extension.xpi
 browser-extension/installer/signed/
 
 # web-ext sign's cache of the AMO upload UUID for this source dir
@@ -57,7 +57,7 @@ browser-extension/extension/.amo-upload-uuid
 
 # Chromium (Chrome/Edge/Brave) build output and native-host dev registration
 browser-extension/installer/chromium-build/
-browser-extension/native-host/com.leconnn.youtube_dl_extension.chromium.json
+browser-extension/native-host/com.twtdl.twtdl_extension.chromium.json
 browser-extension/extension-chromium/dev-key/
 
 # Chromium production signing key -- NEVER commit this. Back it up somewhere

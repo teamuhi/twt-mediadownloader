@@ -1,6 +1,6 @@
 {
-  "name": "com.leconnn.youtube_dl_extension",
-  "description": "Native host for the youtube-dl Downloader extension",
+  "name": "com.twtdl.twtdl_extension",
+  "description": "Native host for the twtdl Downloader extension",
   "path": "__HOST_EXE_PATH__",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://nbackfaldpbdofonhfkmhdjojfopmepk/"]

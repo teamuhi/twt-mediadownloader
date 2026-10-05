@@ -3,7 +3,7 @@
 // whether the popup is open (a Port opened from the popup would die the
 // instant the popup closes, so the popup only ever talks to us).
 
-const HOST_NAME = 'com.leconnn.youtube_dl_extension';
+const HOST_NAME = 'com.twtdl.twtdl_extension';
 
 let port = null;
 
@@ -13,7 +13,7 @@ const pendingRequests = {};
 // requestId -> tabUrl, so a pushed jobUpdate can find its job
 const requestIdToTabUrl = {};
 
-// tabUrl -> { requestId, title, mode, status, percent, filename, error }
+// tabUrl -> { requestId, title, mode, source, status, percent, filename, error, errorCode, errorHint }
 const jobs = {};
 
 // notificationId -> file path, so clicking a finished-download notification
@@ -44,12 +44,34 @@ function sendRequest(message) {
   });
 }
 
+
+// Browser's x.com login cookies, for sensitive/protected tweets. Sent to the
+// local host only for that one request; null when the user turned it off.
+async function getXCookies() {
+  const { useXLogin } = await browser.storage.local.get('useXLogin');
+  if (useXLogin === false) return null;
+  const lists = await Promise.all(['x.com', 'twitter.com'].map((domain) => browser.cookies.getAll({ domain })));
+  return lists.flat().map((c) => ({
+    domain: c.domain, path: c.path, secure: c.secure, expirationDate: c.expirationDate, name: c.name, value: c.value,
+  }));
+}
+
+// Error shape shared with the popup: host errors carry a code, readable
+// message and hint (see backend/errors.py).
+function makeError(msg) {
+  return Object.assign(new Error(msg.error), { code: msg.errorCode, hint: msg.errorHint, detail: msg.errorDetail });
+}
+
+function failure(err) {
+  return { ok: false, error: err.message, errorCode: err.code, errorHint: err.hint, errorDetail: err.detail };
+}
+
 function notify(job) {
   const isError = job.status === 'error';
   browser.notifications.create({
     type: 'basic',
-    title: isError ? 'Download failed' : 'Download finished',
-    message: isError ? job.error : (job.title || job.filename || 'Saved') + (job.path ? '\nClick to show in folder' : ''),
+    title: isError ? 'Download failed' + (job.errorCode ? ' (' + job.errorCode + ')' : '') : 'Download finished',
+    message: isError ? job.error + (job.errorHint ? '\n' + job.errorHint : '') : (job.title || job.filename || 'Saved') + (job.path ? '\nClick to show in folder' : ''),
   }).then((notificationId) => {
     if (!isError && job.path) {
       notificationPaths[notificationId] = job.path;
@@ -74,12 +96,12 @@ function broadcast(tabUrl) {
 }
 
 function onPortMessage(msg) {
-  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'configResult' || msg.type === 'browseFolderResult') {
+  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'tweetResult' || msg.type === 'configResult' || msg.type === 'browseFolderResult') {
     const pending = pendingRequests[msg.requestId];
     if (!pending) return;
     delete pendingRequests[msg.requestId];
     if (msg.ok === false) {
-      pending.reject(new Error(msg.error));
+      pending.reject(makeError(msg));
     } else {
       pending.resolve(msg);
     }
@@ -118,34 +140,38 @@ function onPortDisconnect() {
 
 browser.runtime.onMessage.addListener((message) => {
   if (message.type === 'getFormats') {
-    return sendRequest({ type: 'formats', requestId: newRequestId(), url: message.url });
+    return sendRequest({ type: 'formats', requestId: newRequestId(), url: message.url }).catch(failure);
+  }
+
+  if (message.type === 'getTweet') {
+    return getXCookies()
+      .then((cookies) => sendRequest({ type: 'tweet', requestId: newRequestId(), url: message.url, cookies }))
+      .catch(failure);
   }
 
   if (message.type === 'startDownload') {
     const requestId = newRequestId();
-    requestIdToTabUrl[requestId] = message.tabUrl;
-    jobs[message.tabUrl] = {
+    const { type, tabUrl, ...params } = message;
+    requestIdToTabUrl[requestId] = tabUrl;
+    jobs[tabUrl] = {
       requestId,
       title: message.title,
       mode: message.mode,
+      source: message.source || 'youtube',
       status: 'starting',
       percent: 0,
     };
-    try {
-      ensurePort().postMessage({
-        type: 'download',
-        requestId,
-        url: message.url,
-        mode: message.mode,
-        quality: message.quality,
-        title: message.title,
-        downloadDir: message.downloadDir,
-      });
-    } catch (e) {
-      jobs[message.tabUrl].status = 'error';
-      jobs[message.tabUrl].error = e.message;
-    }
-    broadcast(message.tabUrl);
+    (async () => {
+      try {
+        const cookies = message.source === 'twitter' ? await getXCookies() : null;
+        ensurePort().postMessage({ ...params, type: 'download', requestId, cookies });
+      } catch (e) {
+        jobs[tabUrl].status = 'error';
+        jobs[tabUrl].error = e.message;
+        broadcast(tabUrl);
+      }
+    })();
+    broadcast(tabUrl);
     return;
   }
 
@@ -154,14 +180,14 @@ browser.runtime.onMessage.addListener((message) => {
   }
 
   if (message.type === 'getConfig') {
-    return sendRequest({ type: 'getConfig', requestId: newRequestId() });
+    return sendRequest({ type: 'getConfig', requestId: newRequestId() }).catch(failure);
   }
 
   if (message.type === 'setConfig') {
-    return sendRequest({ type: 'setConfig', requestId: newRequestId(), config: message.config });
+    return sendRequest({ type: 'setConfig', requestId: newRequestId(), config: message.config }).catch(failure);
   }
 
   if (message.type === 'browseFolder') {
-    return sendRequest({ type: 'browseFolder', requestId: newRequestId() });
+    return sendRequest({ type: 'browseFolder', requestId: newRequestId() }).catch(failure);
   }
 });

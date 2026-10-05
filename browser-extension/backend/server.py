@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
-"""Local HTTP backend for the youtube-dl browser extension (dev/test use).
+"""Local HTTP backend for the twtdl browser extension (dev/test use).
 
 This is the fast local dev loop: curl-testable, no registry/native-messaging
 setup needed. The packaged extension talks to native-host/host.py instead,
@@ -29,6 +29,7 @@ BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BACKEND_DIR)
 
 import core  # noqa: E402
+import errors  # noqa: E402
 import yt_dlp  # noqa: E402
 
 TOKEN_PATH = os.path.join(BACKEND_DIR, 'token.txt')
@@ -50,11 +51,14 @@ def get_or_create_token():
     return token
 
 
-def run_download_job(job_id, url, mode, quality):
+def run_download_job(job_id, url, mode, quality, options=None):
     def on_progress(**kwargs):
         with jobs_lock:
             jobs[job_id].update(kwargs)
-    core.run_download(url, mode, quality, on_progress)
+    if options is not None:
+        core.run_twitter_download(url, options, on_progress)
+    else:
+        core.run_download(url, mode, quality, on_progress)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -116,9 +120,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': str(e)})
                 return
             except Exception as e:
-                self._send_json(502, {'error': 'Failed to read video info: %s' % e})
+                self._send_json(502, errors.classify_error(e))
                 return
             self._send_json(200, info)
+            return
+
+        if parsed.path == '/tweet':
+            url = (parse_qs(parsed.query).get('url') or [''])[0]
+            try:
+                self._send_json(200, core.get_tweet_info(url))
+            except Exception as e:
+                self._send_json(502, errors.classify_error(e))
             return
 
         if parsed.path == '/status':
@@ -155,8 +167,12 @@ class Handler(BaseHTTPRequestHandler):
         mode = body.get('mode', '')
         quality = body.get('quality')
 
+        options = body.get('options') if body.get('source') == 'twitter' else None
         try:
-            core.validate_download_request(url, mode, quality)
+            if options is not None:
+                options = core.validate_twitter_request(url, options)
+            else:
+                core.validate_download_request(url, mode, quality)
         except ValueError as e:
             self._send_json(400, {'error': str(e)})
             return
@@ -165,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
         with jobs_lock:
             jobs[job_id] = {'status': 'starting', 'percent': 0}
 
-        thread = threading.Thread(target=run_download_job, args=(job_id, url, mode, quality), daemon=True)
+        thread = threading.Thread(target=run_download_job, args=(job_id, url, mode, quality, options), daemon=True)
         thread.start()
 
         self._send_json(200, {'job_id': job_id})
@@ -176,7 +192,7 @@ def main():
     core.ensure_download_dir()
     token = get_or_create_token()
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
-    print('youtube-dl extension backend')
+    print('twtdl extension backend')
     print('  listening on http://127.0.0.1:%d' % port)
     print('  downloads saved to %s' % core.get_download_dir())
     print('  auth token (paste into the extension options page): %s' % token)

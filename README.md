@@ -1,4 +1,4 @@
-# youtube-dl-extension
+# twtdl-extension
 
 A Firefox/Chrome/Edge/Brave extension for downloading video or audio as
 MP4, MP3, or WAV from any site [yt-dlp](https://github.com/yt-dlp/yt-dlp)

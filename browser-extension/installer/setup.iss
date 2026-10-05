@@ -1,9 +1,9 @@
-; Inno Setup script for the youtube-dl Downloader native host + extension.
+; Inno Setup script for the twtdl Downloader native host + extension.
 ;
 ; Build order (see browser-extension/installer/README.md for full steps):
 ;   1. browser-extension/native-host/vendor/ffmpeg/ has ffmpeg.exe + ffprobe.exe
 ;   2. pyinstaller host.spec (from browser-extension/native-host/) -> dist/host/
-;   3. package browser-extension/extension/ into youtube-dl-extension.xpi (this
+;   3. package browser-extension/extension/ into twtdl-extension.xpi (this
 ;      directory) -- see build.ps1
 ;   4. iscc setup.iss (from this directory)
 ;
@@ -26,14 +26,14 @@
 ; at startup, so installing or upgrading while it's running left the policy
 ; silently not taking effect until some later, easy-to-miss restart.
 
-#define MyAppName "youtube-dl Downloader"
-#define MyAppVersion "0.5.0"
-#define MyAppPublisher "leconnn"
-#define MyAppURL "https://github.com/leconnn/youtube-dl-extension"
-#define NativeHostName "com.leconnn.youtube_dl_extension"
-#define ExtensionId "youtube-dl-extension@local"
+#define MyAppName "twtdl Downloader"
+#define MyAppVersion "0.6.0"
+#define MyAppPublisher "twtdl"
+#define MyAppURL "https://github.com/twtdl/twtdl-extension"
+#define NativeHostName "com.twtdl.twtdl_extension"
+#define ExtensionId "twtdl-extension@local"
 #define HostDistDir "..\native-host\dist\host"
-#define XpiFile "youtube-dl-extension.xpi"
+#define XpiFile "twtdl-extension.xpi"
 
 ; Chromium (Chrome/Edge/Brave) distribution: same host.exe as Firefox, but
 ; the extension itself is installed via each browser's own
@@ -43,7 +43,7 @@
 ; match, the "key" field in extension-chromium/manifest.json -- both come
 ; from signing/chromium-key.pem (gitignored; see native-host/README.md).
 #define ChromiumExtensionId "nbackfaldpbdofonhfkmhdjojfopmepk"
-#define UpdateManifestURL "https://github.com/leconnn/youtube-dl-extension/releases/latest/download/update.xml"
+#define UpdateManifestURL "https://github.com/twtdl/twtdl-extension/releases/latest/download/update.xml"
 
 [Setup]
 AppId={{B36F1F3E-6B0C-4B8E-9B1A-9C6F6F6B6C31}
@@ -51,7 +51,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
-DefaultDirName={autopf}\youtube-dl-extension
+DefaultDirName={autopf}\twtdl-extension
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
 ArchitecturesAllowed=x64compatible
@@ -60,7 +60,7 @@ PrivilegesRequired=admin
 Compression=lzma2/max
 SolidCompression=yes
 OutputDir=Output
-OutputBaseFilename=youtube-dl-extension-setup
+OutputBaseFilename=twtdl-extension-setup
 WizardStyle=modern
 
 [Files]
@@ -242,7 +242,7 @@ begin
   Json :=
     '{' + #13#10 +
     '  "name": "' + '{#NativeHostName}' + '",' + #13#10 +
-    '  "description": "Native host for the youtube-dl Downloader Firefox extension",' + #13#10 +
+    '  "description": "Native host for the twtdl Downloader Firefox extension",' + #13#10 +
     '  "path": "' + JsonEscape(HostExePath) + '",' + #13#10 +
     '  "type": "stdio",' + #13#10 +
     '  "allowed_extensions": ["' + '{#ExtensionId}' + '"]' + #13#10 +
@@ -261,7 +261,7 @@ begin
   Json :=
     '{' + #13#10 +
     '  "name": "' + '{#NativeHostName}' + '",' + #13#10 +
-    '  "description": "Native host for the youtube-dl Downloader extension",' + #13#10 +
+    '  "description": "Native host for the twtdl Downloader extension",' + #13#10 +
     '  "path": "' + JsonEscape(HostExePath) + '",' + #13#10 +
     '  "type": "stdio",' + #13#10 +
     '  "allowed_origins": ["chrome-extension://' + '{#ChromiumExtensionId}' + '/"]' + #13#10 +

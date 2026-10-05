@@ -1,47 +1,50 @@
+// Shared popup logic: tab switching, job/progress + error rendering, settings,
+// theme, and the YouTube panel. The Twitter panel lives in twitter.js and
+// plugs in through the `panels` registry below.
+
 const HTTP_URL_RE = /^https?:\/\//i;
+const TWEET_URL_RE = /^https?:\/\/(?:[\w-]+\.)?(?:x|twitter)\.com\/(?:[^/?#]+|i\/web)\/status(?:es)?\/\d+/i;
 
-const messageEl = document.getElementById('message');
-const videoInfoEl = document.getElementById('video-info');
-const thumbEl = document.getElementById('thumb');
-const titleEl = document.getElementById('title');
-const mp4QualityEl = document.getElementById('mp4-quality');
-const mp3QualityEl = document.getElementById('mp3-quality');
-const wavHintEl = document.getElementById('wav-hint');
-const downloadBtn = document.getElementById('download');
-const downloadToBtn = document.getElementById('download-to');
-const progressWrap = document.getElementById('progress-wrap');
-const progressBar = document.getElementById('progress-bar');
-const progressText = document.getElementById('progress-text');
+const $ = (id) => document.getElementById(id);
 
-const settingsToggleBtn = document.getElementById('settings-toggle');
-const settingsPanel = document.getElementById('settings-panel');
-const downloadDirInput = document.getElementById('download-dir');
-const browseDirBtn = document.getElementById('browse-dir');
-const saveSettingsBtn = document.getElementById('save-settings');
-const settingsStatusEl = document.getElementById('settings-status');
-
-const themeToggleBtn = document.getElementById('theme-toggle');
-const iconSun = document.getElementById('icon-sun');
-const iconMoon = document.getElementById('icon-moon');
+const downloadBtn = $('download');
+const downloadToBtn = $('download-to');
+const actionsEl = $('actions');
+const progressWrap = $('progress-wrap');
+const progressBar = $('progress-bar');
+const progressText = $('progress-text');
+const jobErrorEl = $('job-error');
 
 let currentTabUrlValue = null;
+let activeTab = 'youtube';
+let lastJob = null;
 
-function setMessage(text) {
-  messageEl.textContent = text;
+// name -> { el, accepts(url), hint, loadingText, load(url) -> Promise, payload() -> {...},
+//           state: undefined | 'loading' | 'ready' | 'error' | 'unsupported' }
+const panels = {};
+
+// ---------------------------------------------------------------- helpers
+
+// Background replies { ok: false, error, errorCode, errorHint, errorDetail }
+// on failure (both browsers); turn that into a thrown error carrying the code.
+class AppError extends Error {
+  constructor(res) {
+    super(res.error);
+    this.code = res.errorCode;
+    this.hint = res.errorHint;
+    this.detail = res.errorDetail;
+  }
+}
+
+function send(message) {
+  return browser.runtime.sendMessage(message).then((res) => {
+    if (res && res.ok === false) throw new AppError(res);
+    return res;
+  });
 }
 
 function currentTabUrl() {
   return browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0].url);
-}
-
-function selectedMode() {
-  return document.querySelector('input[name="mode"]:checked').value;
-}
-
-function selectedQuality(mode) {
-  if (mode === 'mp4') return mp4QualityEl.value;
-  if (mode === 'mp3') return mp3QualityEl.value;
-  return undefined;
 }
 
 function formatBytes(bytes) {
@@ -56,6 +59,176 @@ function formatBytes(bytes) {
   return n.toFixed(i === 0 ? 0 : (n < 10 ? 1 : 0)) + ' ' + units[i];
 }
 
+function textNode(tag, className, text) {
+  const node = document.createElement(tag);
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+// err: { code, message, hint, detail }. Built with textContent only, since
+// message/detail can echo page or server text.
+function fillError(el, err) {
+  el.replaceChildren();
+  if (err.code) el.append(textNode('span', 'err-code', err.code));
+  el.append(textNode('div', 'err-msg', err.message));
+  if (err.hint) el.append(textNode('div', 'err-hint', err.hint));
+  if (err.detail && err.detail !== err.message) {
+    const details = document.createElement('details');
+    details.append(textNode('summary', '', 'Details'), textNode('pre', '', err.detail));
+    el.append(details);
+  }
+  el.classList.remove('hidden');
+}
+
+function panelMessage(name, text) {
+  const el = panels[name].el;
+  el.querySelector('.msg').textContent = text;
+  el.querySelector('.error-box').classList.add('hidden');
+}
+
+function panelError(name, err) {
+  const el = panels[name].el;
+  el.querySelector('.msg').textContent = '';
+  fillError(el.querySelector('.error-box'), { code: err.code, message: err.message, hint: err.hint, detail: err.detail });
+}
+
+function noteYtdlp(info) {
+  if (!info || !info.version) return;
+  const age = info.age_days != null ? ' (' + info.age_days + ' days old)' : '';
+  const el = $('ytdlp-info');
+  el.textContent = 'yt-dlp ' + info.version + age;
+  el.classList.toggle('is-stale', info.age_days != null && info.age_days > 90);
+}
+
+// ------------------------------------------------------------------ tabs
+
+function syncActions() {
+  const panel = panels[activeTab];
+  actionsEl.classList.toggle('hidden', panel.state !== 'ready');
+  const busy = lastJob && lastJob.status !== 'finished' && lastJob.status !== 'error';
+  downloadBtn.disabled = !!busy;
+  downloadToBtn.disabled = !!busy;
+}
+
+function loadPanel(name) {
+  const panel = panels[name];
+  if (panel.state) return;
+  if (!panel.accepts(currentTabUrlValue)) {
+    panel.state = 'unsupported';
+    panelMessage(name, panel.hint);
+    return;
+  }
+  panel.state = 'loading';
+  panelMessage(name, panel.loadingText);
+  panel.load(currentTabUrlValue)
+    .then(() => {
+      panel.state = 'ready';
+      panelMessage(name, '');
+      syncActions();
+    })
+    .catch((err) => {
+      panel.state = 'error';
+      panelError(name, err);
+      syncActions();
+    });
+}
+
+function selectTab(name) {
+  activeTab = name;
+  document.querySelectorAll('#tabs [role="tab"]').forEach((tab) => {
+    tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
+  });
+  for (const key in panels) panels[key].el.classList.toggle('hidden', key !== name);
+  loadPanel(name);
+  renderJob(lastJob);
+}
+
+$('tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('[role="tab"]');
+  if (tab) selectTab(tab.dataset.tab);
+});
+
+// -------------------------------------------------------------- job / UI
+
+function renderJob(job) {
+  lastJob = job || null;
+  const show = !!job && (job.source || 'youtube') === activeTab;
+  progressWrap.classList.toggle('hidden', !show);
+  syncActions();
+  if (!show) return;
+
+  const percent = job.percent || 0;
+  progressBar.style.transform = 'scaleX(' + (percent / 100) + ')';
+  if (job.status === 'starting') {
+    progressText.textContent = 'Starting…';
+  } else if (job.status === 'downloading') {
+    progressText.textContent = 'Downloading… ' + percent + '%';
+  } else if (job.status === 'converting') {
+    progressText.textContent = 'Converting…' + (job.source === 'twitter' ? ' ' + percent + '%' : '');
+  } else if (job.status === 'rendering') {
+    progressText.textContent = 'Rendering card… ' + percent + '%';
+  } else if (job.status === 'finished') {
+    progressText.textContent = 'Saved as ' + job.filename;
+  } else if (job.status === 'error') {
+    progressText.textContent = 'Failed';
+  }
+  progressWrap.classList.toggle('is-success', job.status === 'finished');
+  progressWrap.classList.toggle('is-error', job.status === 'error');
+  if (job.status === 'error') {
+    fillError(jobErrorEl, { code: job.errorCode, message: job.error, hint: job.errorHint, detail: job.errorDetail });
+  } else {
+    jobErrorEl.classList.add('hidden');
+  }
+}
+
+browser.runtime.onMessage.addListener((message) => {
+  if (message.type === 'jobUpdate' && message.tabUrl === currentTabUrlValue) {
+    renderJob(message.job);
+  }
+});
+
+function startDownload(downloadDir) {
+  const url = currentTabUrlValue;
+  renderJob({ status: 'starting', percent: 0, source: activeTab });
+  const payload = Object.assign({ type: 'startDownload', tabUrl: url, url, source: activeTab }, panels[activeTab].payload());
+  if (downloadDir) payload.downloadDir = downloadDir;
+  send(payload).catch((err) => renderJob({ status: 'error', error: err.message, source: activeTab }));
+}
+
+function startDownloadTo() {
+  downloadToBtn.disabled = true;
+  send({ type: 'browseFolder' })
+    .then((res) => {
+      syncActions();
+      if (res && res.path) startDownload(res.path);
+    })
+    .catch((err) => {
+      renderJob({ status: 'error', error: 'Could not open folder picker: ' + err.message, source: activeTab });
+    });
+}
+
+downloadBtn.addEventListener('click', () => startDownload());
+downloadToBtn.addEventListener('click', startDownloadTo);
+
+// ---------------------------------------------------------- YouTube panel
+
+const thumbEl = $('thumb');
+const titleEl = $('title');
+const mp4QualityEl = $('mp4-quality');
+const mp3QualityEl = $('mp3-quality');
+const wavHintEl = $('wav-hint');
+
+function selectedMode() {
+  return document.querySelector('input[name="mode"]:checked').value;
+}
+
+function selectedQuality(mode) {
+  if (mode === 'mp4') return mp4QualityEl.value;
+  if (mode === 'mp3') return mp3QualityEl.value;
+  return undefined;
+}
+
 function estimateMp3Bytes(duration, quality, bestAudioKbps) {
   if (!duration) return null;
   const kbps = quality === 'best' ? (bestAudioKbps || 192) : Number(quality);
@@ -65,71 +238,6 @@ function estimateMp3Bytes(duration, quality, bestAudioKbps) {
 function estimateWavBytes(duration) {
   if (!duration) return null;
   return duration * 176400; // ~CD quality: 44.1kHz, 16-bit, stereo
-}
-
-function renderJob(job) {
-  if (!job) {
-    progressWrap.classList.add('hidden');
-    downloadBtn.disabled = false;
-    downloadToBtn.disabled = false;
-    return;
-  }
-  progressWrap.classList.remove('hidden');
-  const percent = job.percent || 0;
-  progressBar.style.transform = 'scaleX(' + (percent / 100) + ')';
-  if (job.status === 'starting') {
-    progressText.textContent = 'Starting…';
-  } else if (job.status === 'downloading') {
-    progressText.textContent = 'Downloading… ' + percent + '%';
-  } else if (job.status === 'converting') {
-    progressText.textContent = 'Converting…';
-  } else if (job.status === 'finished') {
-    progressText.textContent = 'Saved as ' + job.filename;
-  } else if (job.status === 'error') {
-    progressText.textContent = 'Error: ' + job.error;
-  }
-  progressWrap.classList.toggle('is-success', job.status === 'finished');
-  progressWrap.classList.toggle('is-error', job.status === 'error');
-  const done = job.status === 'finished' || job.status === 'error';
-  downloadBtn.disabled = !done;
-  downloadToBtn.disabled = !done;
-}
-
-browser.runtime.onMessage.addListener((message) => {
-  if (message.type === 'jobUpdate' && message.tabUrl === currentTabUrlValue) {
-    renderJob(message.job);
-  }
-});
-
-function startDownload(url, downloadDir) {
-  const mode = selectedMode();
-  const quality = selectedQuality(mode);
-  const title = titleEl.value.trim() || titleEl.placeholder;
-  downloadBtn.disabled = true;
-  downloadToBtn.disabled = true;
-  renderJob({ status: 'starting', percent: 0 });
-
-  const payload = { type: 'startDownload', tabUrl: url, url, mode, quality, title };
-  if (downloadDir) payload.downloadDir = downloadDir;
-
-  browser.runtime.sendMessage(payload).catch((err) => {
-    renderJob({ status: 'error', error: err.message });
-  });
-}
-
-function startDownloadTo(url) {
-  downloadToBtn.disabled = true;
-  browser.runtime.sendMessage({ type: 'browseFolder' })
-    .then((res) => {
-      downloadToBtn.disabled = false;
-      if (res && res.path) {
-        startDownload(url, res.path);
-      }
-    })
-    .catch((err) => {
-      downloadToBtn.disabled = false;
-      setMessage('Could not open folder picker: ' + err.message);
-    });
 }
 
 function populateFormats(info) {
@@ -171,12 +279,34 @@ function populateFormats(info) {
   const wavSize = formatBytes(estimateWavBytes(info.duration));
   wavHintEl.textContent = 'lossless' + (wavSize ? ' · ~' + wavSize : '');
 
-  infoLoaded = true;
-  videoInfoEl.classList.remove('hidden');
+  noteYtdlp(info.ytdlp);
+  $('video-info').classList.remove('hidden');
 }
 
+panels.youtube = {
+  el: $('yt-panel'),
+  accepts: (url) => HTTP_URL_RE.test(url),
+  hint: 'Open a web page with a video or audio to download it.',
+  loadingText: 'Loading media info…',
+  load: (url) => send({ type: 'getFormats', url }).then(populateFormats),
+  payload() {
+    const mode = selectedMode();
+    return { mode, quality: selectedQuality(mode), title: titleEl.value.trim() || titleEl.placeholder };
+  },
+};
+
+// --------------------------------------------------------------- settings
+
+const settingsToggleBtn = $('settings-toggle');
+const settingsPanel = $('settings-panel');
+const mainEl = $('main');
+const downloadDirInput = $('download-dir');
+const browseDirBtn = $('browse-dir');
+const saveSettingsBtn = $('save-settings');
+const settingsStatusEl = $('settings-status');
+const useXLoginEl = $('use-x-login');
+
 let loadedDownloadDir = '';
-let infoLoaded = false;
 
 function setSettingsStatus(text) {
   settingsStatusEl.textContent = text;
@@ -188,7 +318,7 @@ function updateSaveButtonState() {
 
 function loadSettings() {
   setSettingsStatus('Loading…');
-  browser.runtime.sendMessage({ type: 'getConfig' })
+  send({ type: 'getConfig' })
     .then((res) => {
       loadedDownloadDir = res.downloadDir || '';
       downloadDirInput.value = loadedDownloadDir;
@@ -198,14 +328,14 @@ function loadSettings() {
     .catch((err) => {
       setSettingsStatus('Error: ' + err.message);
     });
+  browser.storage.local.get('useXLogin').then((stored) => {
+    useXLoginEl.checked = stored.useXLogin !== false;
+  });
 }
 
 function saveSettings() {
   setSettingsStatus('Saving…');
-  browser.runtime.sendMessage({
-    type: 'setConfig',
-    config: { downloadDir: downloadDirInput.value.trim() },
-  })
+  send({ type: 'setConfig', config: { downloadDir: downloadDirInput.value.trim() } })
     .then((res) => {
       loadedDownloadDir = res.downloadDir || '';
       downloadDirInput.value = loadedDownloadDir;
@@ -219,36 +349,32 @@ function saveSettings() {
 }
 
 downloadDirInput.addEventListener('input', updateSaveButtonState);
+useXLoginEl.addEventListener('change', () => browser.storage.local.set({ useXLogin: useXLoginEl.checked }));
 
-// Matches --duration-base in popup.css. The two sections are different
-// heights, so revealing the incoming one before the outgoing one has fully
-// faded out (display: none) would momentarily lay out both at once and
-// push/grow the popup -- sequencing them one at a time avoids that.
+// Matches --duration-base in popup.css. The settings panel and the main UI
+// are tall enough together to push the popup past the browser's max popup
+// height, so they're shown one at a time; sequencing the fade avoids both
+// being laid out at once.
 const PANEL_FADE_MS = 150;
 
 settingsToggleBtn.addEventListener('click', () => {
   const opening = settingsPanel.classList.contains('hidden');
-  // The settings panel and the video info/download UI are tall enough
-  // together to push the popup past the browser's max popup height,
-  // forcing a scrollbar -- shown one at a time instead, there's no overlap.
   if (opening) {
     loadSettings();
-    videoInfoEl.classList.add('hidden');
+    mainEl.classList.add('hidden');
     setTimeout(() => settingsPanel.classList.remove('hidden'), PANEL_FADE_MS);
   } else {
     settingsPanel.classList.add('hidden');
-    if (infoLoaded) {
-      setTimeout(() => videoInfoEl.classList.remove('hidden'), PANEL_FADE_MS);
-    }
+    setTimeout(() => mainEl.classList.remove('hidden'), PANEL_FADE_MS);
   }
 });
 
 saveSettingsBtn.addEventListener('click', saveSettings);
 
-function browseForDir() {
+browseDirBtn.addEventListener('click', () => {
   browseDirBtn.disabled = true;
   setSettingsStatus('Choose a folder…');
-  browser.runtime.sendMessage({ type: 'browseFolder' })
+  send({ type: 'browseFolder' })
     .then((res) => {
       browseDirBtn.disabled = false;
       if (res && res.path) {
@@ -262,9 +388,13 @@ function browseForDir() {
       browseDirBtn.disabled = false;
       setSettingsStatus('Error: ' + err.message);
     });
-}
+});
 
-browseDirBtn.addEventListener('click', browseForDir);
+// ------------------------------------------------------------------ theme
+
+const themeToggleBtn = $('theme-toggle');
+const iconSun = $('icon-sun');
+const iconMoon = $('icon-moon');
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -274,48 +404,28 @@ function applyTheme(theme) {
   themeToggleBtn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
 }
 
-function initTheme() {
-  browser.storage.local.get('theme').then((stored) => {
-    const theme = stored.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    applyTheme(theme);
-  });
-}
-
 themeToggleBtn.addEventListener('click', () => {
   const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   applyTheme(next);
   browser.storage.local.set({ theme: next });
 });
 
-initTheme();
+// ------------------------------------------------------------------- init
 
 function init() {
+  browser.storage.local.get('theme').then((stored) => {
+    applyTheme(stored.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  });
+
   currentTabUrl().then((url) => {
     currentTabUrlValue = url;
-
-    if (!HTTP_URL_RE.test(url)) {
-      setMessage('Open a web page with a video or audio to download it.');
-      return;
-    }
-
-    setMessage('Loading media info…');
-
-    browser.runtime.sendMessage({ type: 'getFormats', url })
-      .then((res) => {
-        setMessage('');
-        populateFormats(res);
-
-        downloadBtn.addEventListener('click', () => startDownload(url));
-        downloadToBtn.addEventListener('click', () => startDownloadTo(url));
-
-        browser.runtime.sendMessage({ type: 'getJob', tabUrl: url }).then((job) => {
-          if (job) renderJob(job);
-        });
-      })
-      .catch((err) => {
-        setMessage('Could not load this page: ' + err.message);
-      });
+    send({ type: 'getJob', tabUrl: url }).then((job) => {
+      if (job) lastJob = job;
+      // A tweet link opens on the Twitter tab; anything else on YouTube.
+      selectTab(TWEET_URL_RE.test(url) ? 'twitter' : 'youtube');
+    });
   });
 }
 
-init();
+// twitter.js registers panels.twitter at script load; init runs after both.
+document.addEventListener('DOMContentLoaded', init);

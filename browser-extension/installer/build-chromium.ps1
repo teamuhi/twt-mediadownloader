@@ -4,14 +4,14 @@
 # store-free distribution.
 #
 # There is no hand-maintained second copy of popup.js/popup.css/popup.html:
-# this script copies popup.js/popup.css verbatim from extension/ and derives
+# this script copies popup.js/twitter.js/popup.css verbatim from extension/ and derives
 # popup.html from extension/popup.html by inserting one <script> tag for the
 # browser-polyfill shim, so extension/ (the shipping Firefox extension)
 # never needs to be touched or hand-kept-in-sync.
 #
 # Usage:
 #   .\build-chromium.ps1            # unpacked only, for "Load unpacked" dev testing
-#   .\build-chromium.ps1 -Pack      # also produces youtube-dl-extension.crx + update.xml
+#   .\build-chromium.ps1 -Pack      # also produces twtdl-extension.crx + update.xml
 #
 # -Pack requires a local Chrome or Edge install (used only to run
 # --pack-extension; the built .crx works in Chrome, Edge, and Brave alike)
@@ -39,8 +39,8 @@ $keyPath = Join-Path $PSScriptRoot 'signing\chromium-key.pem'
 # derived from signing/chromium-key.pem. If the key is ever regenerated,
 # update the manifest's "key" field to match (see native-host/README.md).
 $ExpectedExtensionId = 'nbackfaldpbdofonhfkmhdjojfopmepk'
-$UpdateManifestUrl = 'https://github.com/leconnn/youtube-dl-extension/releases/latest/download/update.xml'
-$CrxDownloadUrl = 'https://github.com/leconnn/youtube-dl-extension/releases/latest/download/youtube-dl-extension.crx'
+$UpdateManifestUrl = 'https://github.com/twtdl/twtdl-extension/releases/latest/download/update.xml'
+$CrxDownloadUrl = 'https://github.com/twtdl/twtdl-extension/releases/latest/download/twtdl-extension.crx'
 
 Write-Host '--- Cleaning output directory ---'
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
@@ -52,6 +52,7 @@ Copy-Item (Join-Path $chromiumSrcDir 'vendor\browser-polyfill.js') (Join-Path $o
 
 Write-Host '--- Copying shared files from extension/ ---'
 Copy-Item (Join-Path $extensionDir 'popup.js') $outDir
+Copy-Item (Join-Path $extensionDir 'twitter.js') $outDir
 Copy-Item (Join-Path $extensionDir 'popup.css') $outDir
 Copy-Item (Join-Path $extensionDir 'icons') $outDir -Recurse
 
@@ -92,7 +93,7 @@ if (Test-Path $chromeExe) {
   throw 'Neither Chrome nor Edge found at their default install paths -- either is needed to run --pack-extension.'
 }
 
-$crxPath = Join-Path $buildDir 'youtube-dl-extension.crx'
+$crxPath = Join-Path $buildDir 'twtdl-extension.crx'
 if (Test-Path $crxPath) { Remove-Item $crxPath -Force }
 $producedCrx = Join-Path $buildDir 'unpacked.crx'
 if (Test-Path $producedCrx) { Remove-Item $producedCrx -Force }

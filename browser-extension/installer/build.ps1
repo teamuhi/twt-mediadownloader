@@ -4,7 +4,7 @@
 # script's own location.
 #
 # Prerequisites (one-time):
-#   - PyInstaller: pip install pyinstaller
+#   - PyInstaller + deps: pip install pyinstaller yt-dlp pillow
 #   - browser-extension/native-host/vendor/ffmpeg/ffmpeg.exe and ffprobe.exe
 #     (see native-host/vendor/README.md for where to get an LGPL build)
 #   - Inno Setup 6 (ISCC.exe on PATH, or edit $iscc below):
@@ -18,7 +18,7 @@ $extensionDir = Join-Path $root 'extension'
 $nativeHostDir = Join-Path $root 'native-host'
 
 Write-Host '--- Packaging extension into .xpi ---'
-$xpiPath = Join-Path $installerDir 'youtube-dl-extension.xpi'
+$xpiPath = Join-Path $installerDir 'twtdl-extension.xpi'
 if (Test-Path $xpiPath) { Remove-Item $xpiPath -Force }
 Compress-Archive -Path (Join-Path $extensionDir '*') -DestinationPath ($xpiPath -replace '\.xpi$', '.zip') -Force
 Move-Item ($xpiPath -replace '\.xpi$', '.zip') $xpiPath -Force
