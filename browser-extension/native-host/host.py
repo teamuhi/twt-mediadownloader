@@ -156,7 +156,7 @@ def handle_ping(msg):
 def handle_formats(msg):
     request_id = msg.get('requestId')
     try:
-        info = core.fetch_formats(msg.get('url', ''))
+        info = core.fetch_formats(msg.get('url', ''), ffmpeg_location=FFMPEG_LOCATION)
         send_message(dict(info, type='formatsResult', requestId=request_id, ok=True))
     except Exception as e:
         send_message(dict(errors.classify_error(e), type='formatsResult', requestId=request_id, ok=False))
@@ -191,12 +191,13 @@ def handle_download(msg):
         return
 
     try:
-        core.validate_download_request(url, mode, quality)
+        core.validate_download_request(url, mode, quality, msg.get('audio'))
     except ValueError as e:
         on_progress(status='error', **errors.classify_error(e))
         return
 
-    core.run_download(url, mode, quality, on_progress, ffmpeg_location=FFMPEG_LOCATION, download_dir=download_dir, title=title)
+    core.run_download(url, mode, quality, on_progress, ffmpeg_location=FFMPEG_LOCATION, download_dir=download_dir, title=title,
+                      audio=msg.get('audio'))
 
 
 def handle_reveal_file(msg):

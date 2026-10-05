@@ -1,6 +1,6 @@
-// Shared popup logic: tab switching, job/progress + error rendering, settings,
-// theme, and the YouTube panel. The Twitter panel lives in twitter.js and
-// plugs in through the `panels` registry below.
+// Shared popup logic: tab switching, job/progress + error rendering, settings
+// and theme. The YouTube and Twitter panels live in youtube.js / twitter.js and
+// plug in through the `panels` registry below.
 
 const HTTP_URL_RE = /^https?:\/\//i;
 const TWEET_URL_RE = /^https?:\/\/(?:[\w-]+\.)?(?:x|twitter)\.com\/(?:[^/?#]+|i\/web)\/status(?:es)?\/\d+/i;
@@ -93,6 +93,11 @@ function panelError(name, err) {
   fillError(el.querySelector('.error-box'), { code: err.code, message: err.message, hint: err.hint, detail: err.detail });
 }
 
+// Shown when the native host answers with an older payload than the popup expects.
+function noteOutdatedHost(name, outdated) {
+  panels[name].el.querySelector('.host-note').classList.toggle('hidden', !outdated);
+}
+
 function noteYtdlp(info) {
   if (!info || !info.version) return;
   const age = info.age_days != null ? ' (' + info.age_days + ' days old)' : '';
@@ -103,12 +108,23 @@ function noteYtdlp(info) {
 
 // ------------------------------------------------------------------ tabs
 
+// Reflects the selected output in the footer button, the hint under it and the
+// filename extension badge. Panels expose output() -> { label, ext, hint }.
+function refreshOutput() {
+  const panel = panels[activeTab];
+  const out = panel && panel.state === 'ready' && panel.output ? panel.output() : null;
+  $('download-label').textContent = out ? 'Download ' + out.label : 'Download';
+  $('action-hint').textContent = out && out.hint ? out.hint : '';
+  if (panel && panel.extEl) panel.extEl.textContent = out ? out.ext : '';
+}
+
 function syncActions() {
   const panel = panels[activeTab];
   actionsEl.classList.toggle('hidden', panel.state !== 'ready');
   const busy = lastJob && lastJob.status !== 'finished' && lastJob.status !== 'error';
   downloadBtn.disabled = !!busy;
   downloadToBtn.disabled = !!busy;
+  refreshOutput();
 }
 
 function loadPanel(name) {
@@ -136,6 +152,7 @@ function loadPanel(name) {
 
 function selectTab(name) {
   activeTab = name;
+  document.body.dataset.tab = name; // the Twitter tab gets a wider popup
   document.querySelectorAll('#tabs [role="tab"]').forEach((tab) => {
     tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
   });
@@ -166,10 +183,12 @@ function renderJob(job) {
     progressText.textContent = 'Downloading… ' + percent + '%';
   } else if (job.status === 'converting') {
     progressText.textContent = 'Converting…' + (job.source === 'twitter' ? ' ' + percent + '%' : '');
+  } else if (job.status === 'tagging') {
+    progressText.textContent = 'Writing tags…';
   } else if (job.status === 'rendering') {
     progressText.textContent = 'Rendering card… ' + percent + '%';
   } else if (job.status === 'finished') {
-    progressText.textContent = 'Saved as ' + job.filename;
+    progressText.textContent = 'Saved as ' + job.filename + (job.warning ? '\n' + job.warning : '');
   } else if (job.status === 'error') {
     progressText.textContent = 'Failed';
   }
@@ -210,90 +229,6 @@ function startDownloadTo() {
 
 downloadBtn.addEventListener('click', () => startDownload());
 downloadToBtn.addEventListener('click', startDownloadTo);
-
-// ---------------------------------------------------------- YouTube panel
-
-const thumbEl = $('thumb');
-const titleEl = $('title');
-const mp4QualityEl = $('mp4-quality');
-const mp3QualityEl = $('mp3-quality');
-const wavHintEl = $('wav-hint');
-
-function selectedMode() {
-  return document.querySelector('input[name="mode"]:checked').value;
-}
-
-function selectedQuality(mode) {
-  if (mode === 'mp4') return mp4QualityEl.value;
-  if (mode === 'mp3') return mp3QualityEl.value;
-  return undefined;
-}
-
-function estimateMp3Bytes(duration, quality, bestAudioKbps) {
-  if (!duration) return null;
-  const kbps = quality === 'best' ? (bestAudioKbps || 192) : Number(quality);
-  return duration * kbps * 125; // kbps * 1000 / 8
-}
-
-function estimateWavBytes(duration) {
-  if (!duration) return null;
-  return duration * 176400; // ~CD quality: 44.1kHz, 16-bit, stereo
-}
-
-function populateFormats(info) {
-  titleEl.value = '';
-  titleEl.placeholder = info.title || '';
-
-  if (info.thumbnail) {
-    thumbEl.src = info.thumbnail;
-    thumbEl.classList.remove('hidden');
-  } else {
-    thumbEl.classList.add('hidden');
-  }
-
-  mp4QualityEl.innerHTML = '';
-  (info.video_qualities || []).forEach((q) => {
-    const opt = document.createElement('option');
-    opt.value = q.height;
-    const size = formatBytes(q.estimated_bytes);
-    opt.textContent = q.height + 'p' + (size ? ' · ' + size : '');
-    mp4QualityEl.appendChild(opt);
-  });
-  if (mp4QualityEl.options.length === 0) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = 'no video streams found';
-    mp4QualityEl.appendChild(opt);
-  }
-
-  mp3QualityEl.innerHTML = '';
-  (info.mp3_qualities || ['best', '320', '256', '192', '128']).forEach((q) => {
-    const opt = document.createElement('option');
-    opt.value = q;
-    const size = formatBytes(estimateMp3Bytes(info.duration, q, info.best_audio_kbps));
-    const label = q === 'best' ? 'Best' : q + ' kbps';
-    opt.textContent = label + (size ? ' · ~' + size : '');
-    mp3QualityEl.appendChild(opt);
-  });
-
-  const wavSize = formatBytes(estimateWavBytes(info.duration));
-  wavHintEl.textContent = 'lossless' + (wavSize ? ' · ~' + wavSize : '');
-
-  noteYtdlp(info.ytdlp);
-  $('video-info').classList.remove('hidden');
-}
-
-panels.youtube = {
-  el: $('yt-panel'),
-  accepts: (url) => HTTP_URL_RE.test(url),
-  hint: 'Open a web page with a video or audio to download it.',
-  loadingText: 'Loading media info…',
-  load: (url) => send({ type: 'getFormats', url }).then(populateFormats),
-  payload() {
-    const mode = selectedMode();
-    return { mode, quality: selectedQuality(mode), title: titleEl.value.trim() || titleEl.placeholder };
-  },
-};
 
 // --------------------------------------------------------------- settings
 
@@ -376,6 +311,9 @@ const PANEL_FADE_MS = 150;
 
 settingsToggleBtn.addEventListener('click', () => {
   const opening = settingsPanel.classList.contains('hidden');
+  $('app').classList.toggle('settings-open', opening);
+  settingsToggleBtn.setAttribute('aria-pressed', String(opening));
+  settingsToggleBtn.title = opening ? 'Close settings' : 'Settings';
   if (opening) {
     loadSettings();
     mainEl.classList.add('hidden');
@@ -412,14 +350,9 @@ Object.entries(dirFields).forEach(([name, field]) => {
 // ------------------------------------------------------------------ theme
 
 const themeToggleBtn = $('theme-toggle');
-const iconSun = $('icon-sun');
-const iconMoon = $('icon-moon');
-
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const isDark = theme === 'dark';
-  iconMoon.classList.toggle('hidden', isDark);
-  iconSun.classList.toggle('hidden', !isDark);
   themeToggleBtn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
 }
 

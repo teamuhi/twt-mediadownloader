@@ -20,6 +20,7 @@ import time
 import yt_dlp
 from yt_dlp.utils import sanitize_filename
 
+import audio_tags
 import errors
 import render
 import twitter
@@ -32,9 +33,22 @@ TMP_DIR = os.path.join(APP_DATA_DIR, 'tmp')
 
 HTTP_URL_RE = re.compile(r'^https?://', re.IGNORECASE)
 
-MP3_QUALITIES = {'best', '320', '256', '192', '128'}
+# Audio output formats. `codec` is yt-dlp's preferredcodec, `encoder` the ffmpeg
+# encoder it needs (formats whose encoder is missing from the bundled ffmpeg are
+# not offered). For lossy formats 'best' means VBR V0 (mp3) or "keep the source
+# stream when it already is this codec" (the others).
+AUDIO_FORMATS = {
+    'mp3': {'label': 'MP3', 'sub': 'Universal', 'codec': 'mp3', 'ext': 'mp3', 'encoder': 'libmp3lame', 'qualities': ['best', '320', '256', '192', '128']},
+    'm4a': {'label': 'M4A', 'sub': 'AAC', 'codec': 'm4a', 'ext': 'm4a', 'encoder': 'aac', 'qualities': ['best', '256', '192', '128']},
+    'opus': {'label': 'Opus', 'sub': 'Smallest', 'codec': 'opus', 'ext': 'opus', 'encoder': 'libopus', 'qualities': ['best', '160', '128', '96']},
+    'ogg': {'label': 'OGG', 'sub': 'Vorbis', 'codec': 'vorbis', 'ext': 'ogg', 'encoder': 'libvorbis', 'qualities': ['best', '320', '192', '128']},
+    'flac': {'label': 'FLAC', 'sub': 'Lossless', 'codec': 'flac', 'ext': 'flac', 'encoder': 'flac', 'qualities': []},
+    'alac': {'label': 'ALAC', 'sub': 'Apple', 'codec': 'alac', 'ext': 'm4a', 'encoder': 'alac', 'qualities': []},
+    'wav': {'label': 'WAV', 'sub': 'Raw PCM', 'codec': 'wav', 'ext': 'wav', 'encoder': 'pcm_s16le', 'qualities': []},
+}
 
-MODE_EXTENSIONS = {'mp4': 'mp4', 'mp3': 'mp3', 'wav': 'wav'}
+MAX_META_LEN = 500
+MAX_COVER_DATA_URL = 14_000_000  # ~10 MB of image
 
 
 def load_config():
@@ -136,10 +150,91 @@ def best_audio_kbps(info):
     return max(abrs) if abrs else None
 
 
-def expected_final_path(ydl, info, mode):
-    base = ydl.prepare_filename(info)
-    root, _ext = os.path.splitext(base)
-    return root + '.' + MODE_EXTENSIONS[mode]
+# ---------------------------------------------------------- audio metadata
+
+_NOISE_RE = re.compile(r'\s*[(\[【][^)\]】]*\b(?:official|lyrics?|audio|video|visuali[sz]er|mv|m/v|hd|hq|4k)\b[^)\]】]*[)\]】]', re.IGNORECASE)
+_SPLIT_RE = re.compile(r'^(.+?)\s+[-–—]\s+(.+)$')
+
+
+def _strip_topic(name):
+    return re.sub(r'\s*-\s*Topic$', '', name or '').strip()
+
+
+def _iso_date(info):
+    raw = str(info.get('release_date') or info.get('upload_date') or '')
+    if re.fullmatch(r'\d{8}', raw):
+        return '%s-%s-%s' % (raw[:4], raw[4:6], raw[6:])
+    return str(info.get('release_year') or '')
+
+
+def auto_meta(info):
+    """Tags guessed from what yt-dlp knows. Music uploads carry real
+    track/artist/album fields; ordinary videos fall back to splitting an
+    "Artist - Title" video title and using the channel name."""
+    track = info.get('track')
+    artist = _strip_topic(info.get('artist') or '')
+    title = _NOISE_RE.sub('', track or info.get('title') or '').strip()
+    if not track:
+        m = _SPLIT_RE.match(title)
+        if m and (not artist or m.group(1).strip().lower() == artist.lower()):
+            artist, title = m.group(1).strip(), m.group(2).strip()
+    artist = artist or _strip_topic(info.get('creator') or info.get('uploader') or info.get('channel') or '')
+    return {
+        'title': title,
+        'artist': artist,
+        'album': info.get('album') or '',
+        'albumArtist': info.get('album_artist') or '',
+        'date': _iso_date(info),
+        'genre': info.get('genre') or (info.get('genres') or [''])[0] or '',
+        'track': str(info.get('track_number') or ''),
+        'comment': info.get('webpage_url') or '',
+    }
+
+
+def cover_urls(info):
+    """Candidate cover images, best first: the 1280px YouTube still when it
+    exists (older videos 404 on it, hence the fallbacks), then yt-dlp's pick."""
+    thumbs = [t['url'] for t in (info.get('thumbnails') or []) if t.get('url')]
+    big = [u for u in thumbs if 'maxresdefault' in u and u.split('?')[0].endswith('.jpg')]
+    return list(dict.fromkeys(big + [info.get('thumbnail')] + thumbs[::-1]))[:6] if (thumbs or info.get('thumbnail')) else []
+
+
+def _fetch_cover(info):
+    last = None
+    for url in filter(None, cover_urls(info)):
+        try:
+            with twitter._http_get(url) as resp:
+                return resp.read()
+        except Exception as e:
+            last = e
+    raise last or ValueError('no thumbnail available')
+
+
+def default_audio_name(meta):
+    return '%s - %s' % (meta['artist'], meta['title']) if meta['artist'] and meta['title'] else meta['title'] or 'audio'
+
+
+def _tag_audio(path, audio, info):
+    """Writes the tags + cover; returns a warning string instead of raising."""
+    meta = auto_meta(info)
+    if audio['meta'] is not None:
+        meta.update(audio['meta'])  # edit mode: the user's values win, blanks included
+    cover = None
+    warning = None
+    c = audio['cover']
+    try:
+        if c['source'] == 'thumbnail':
+            cover = audio_tags.prepare_cover(_fetch_cover(info), c['square'])
+        elif c['source'] == 'custom':
+            import base64
+            cover = audio_tags.prepare_cover(base64.b64decode(c['dataUrl'].split(',', 1)[1]), c['square'])
+    except Exception as e:
+        warning = 'Cover art skipped: %s' % e
+    try:
+        audio_tags.write_tags(path, audio['format'], meta, cover)
+    except Exception as e:
+        warning = 'Tags could not be written: %s' % e
+    return warning
 
 
 def dedupe_path(path):
@@ -156,7 +251,7 @@ def dedupe_path(path):
         n += 1
 
 
-def fetch_formats(url):
+def fetch_formats(url, ffmpeg_location=None):
     """Returns the /formats-style info dict for `url`.
 
     Raises ValueError (user-facing message) for a missing/non-http(s) URL or
@@ -176,25 +271,62 @@ def fetch_formats(url):
 
     return {
         'title': info.get('title'),
+        'channel': info.get('channel') or info.get('uploader') or '',
         'thumbnail': info.get('thumbnail'),
         'duration': info.get('duration'),
         'video_qualities': video_qualities_from_info(info),
-        'mp3_qualities': sorted(MP3_QUALITIES, key=lambda q: (q != 'best', -int(q) if q != 'best' else 0)),
+        'audio_formats': [dict(id=fid, **{k: f[k] for k in ('label', 'sub', 'ext', 'qualities')})
+                          for fid, f in AUDIO_FORMATS.items() if render.has_encoder(f['encoder'], ffmpeg_location)],
+        'meta': auto_meta(info),
         'best_audio_kbps': best_audio_kbps(info),
         'ytdlp': errors.ytdlp_version_info(),
     }
 
 
-def validate_download_request(url, mode, quality):
-    """Raises ValueError (user-facing message) if the request is invalid."""
+def _clip(value):
+    return str(value if value is not None else '').strip()[:MAX_META_LEN]
+
+
+def _normalize_audio(audio):
+    audio = audio if isinstance(audio, dict) else {}
+    fmt = audio.get('format')
+    if fmt not in AUDIO_FORMATS:
+        raise ValueError('audio format must be one of ' + ', '.join(AUDIO_FORMATS))
+    qualities = AUDIO_FORMATS[fmt]['qualities']
+    quality = str(audio.get('quality') or 'best') if qualities else None
+    if qualities and quality not in qualities:
+        raise ValueError('invalid %s quality' % fmt)
+    meta = audio.get('meta')
+    cover = audio.get('cover') if isinstance(audio.get('cover'), dict) else {}
+    source = cover.get('source') if cover.get('source') in ('thumbnail', 'custom', 'none') else 'thumbnail'
+    data_url = cover.get('dataUrl') or ''
+    if source == 'custom' and not (data_url.startswith('data:image/') and ',' in data_url and len(data_url) <= MAX_COVER_DATA_URL):
+        raise ValueError('custom cover must be an image under 10 MB')
+    return {
+        'format': fmt,
+        'quality': quality,
+        'tags': audio.get('tags', True) is not False,
+        'meta': {k: _clip(meta.get(k)) for k in audio_tags.META_KEYS} if isinstance(meta, dict) else None,
+        'cover': {'source': source, 'square': cover.get('square', True) is not False, 'dataUrl': data_url if source == 'custom' else ''},
+    }
+
+
+def validate_download_request(url, mode, quality, audio=None):
+    """Raises ValueError (user-facing message) if the request is invalid;
+    otherwise returns the normalized (mode, quality, audio). The legacy modes
+    'mp3' / 'wav' are accepted and become mode 'audio' with that format."""
     if not url or not HTTP_URL_RE.match(url):
         raise ValueError('URL is missing or invalid')
-    if mode not in ('mp4', 'mp3', 'wav'):
-        raise ValueError('mode must be one of mp4, mp3, wav')
-    if mode == 'mp4' and not quality:
+    if mode in ('mp3', 'wav'):
+        mode, audio = 'audio', {'format': mode, 'quality': quality}
+    if mode not in ('mp4', 'audio'):
+        raise ValueError('mode must be mp4 or audio')
+    if mode == 'audio':
+        audio = _normalize_audio(audio)
+        return mode, audio['quality'], audio
+    if not quality:
         raise ValueError('quality (target height) is required for mp4')
-    if mode == 'mp3' and quality and str(quality) not in MP3_QUALITIES:
-        raise ValueError('invalid mp3 quality')
+    return mode, quality, None
 
 
 def make_progress_hook(on_progress):
@@ -212,14 +344,16 @@ def make_progress_hook(on_progress):
     return hook
 
 
-def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download_dir=None, title=None):
-    """Downloads/converts `url` per `mode`/`quality`.
+def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download_dir=None, title=None, audio=None):
+    """Downloads/converts `url` per `mode` ('mp4' or 'audio') / `quality`.
 
     Calls on_progress(**kwargs) with partial updates as the download
-    proceeds (e.g. status='downloading', percent=...; status='converting'),
-    then a final call: status='finished', percent=100, filename=..., path=...
+    proceeds (e.g. status='downloading', percent=...; status='converting';
+    status='tagging'), then a final call: status='finished', percent=100,
+    filename=..., path=... (+ warning=... if tags/cover couldn't be written)
     or status='error', error=....
 
+    `audio` is {format, quality, tags, meta, cover} (see _normalize_audio).
     `ffmpeg_location` lets a frozen/bundled host point at its own bundled
     ffmpeg instead of relying on PATH. `download_dir` overrides the
     configured/default save location for this one call. `title`, if given,
@@ -233,22 +367,26 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
     an existing file or leaves ffmpeg stuck waiting on an overwrite prompt
     with no console attached to show it.
     """
-    if mode not in MODE_EXTENSIONS:
-        on_progress(status='error', **errors.classify_error('Unknown mode: %s' % mode))
+    try:
+        mode, quality, audio = validate_download_request(url, mode, quality, audio)
+    except ValueError as e:
+        on_progress(status='error', **errors.classify_error(e))
         return
 
     target_dir = ensure_download_dir(download_dir)
+    ext = AUDIO_FORMATS[audio['format']]['ext'] if audio else 'mp4'
 
     if not title:
         try:
             probe_opts = {'quiet': True, 'no_warnings': True, 'skip_download': True, 'noplaylist': True}
             with yt_dlp.YoutubeDL(probe_opts) as probe:
-                title = probe.extract_info(url, download=False).get('title') or 'video'
+                probed = probe.extract_info(url, download=False)
+            title = default_audio_name(auto_meta(probed)) if audio else probed.get('title') or 'video'
         except Exception as e:
             on_progress(status='error', **errors.classify_error(e))
             return
 
-    final_path = dedupe_path(os.path.join(target_dir, sanitize_filename(title, restricted=False) + '.' + MODE_EXTENSIONS[mode]))
+    final_path = dedupe_path(os.path.join(target_dir, sanitize_filename(title, restricted=False) + '.' + ext))
     outtmpl = os.path.splitext(final_path)[0] + '.%(ext)s'
 
     ydl_opts = {
@@ -268,31 +406,30 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
         ydl_opts['ffmpeg_location'] = ffmpeg_location
 
     if mode == 'mp4':
-        height = quality
         ydl_opts['format'] = (
             'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/'
             'bestvideo[height<={h}]+bestaudio/best[height<={h}]'
-        ).format(h=height)
+        ).format(h=quality)
         ydl_opts['merge_output_format'] = 'mp4'
-    elif mode == 'mp3':
+    else:
+        pp = {'key': 'FFmpegExtractAudio', 'preferredcodec': AUDIO_FORMATS[audio['format']]['codec']}
+        if audio['format'] == 'mp3':
+            pp['preferredquality'] = quality if quality != 'best' else '0'
+        elif quality and quality != 'best':
+            pp['preferredquality'] = quality
         ydl_opts['format'] = 'bestaudio/best'
-        pp = {'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}
-        pp['preferredquality'] = quality if (quality and quality != 'best') else '0'
         ydl_opts['postprocessors'] = [pp]
-    elif mode == 'wav':
-        ydl_opts['format'] = 'bestaudio/best'
-        ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}]
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            final_path = expected_final_path(ydl, info, mode)
-        on_progress(
-            status='finished',
-            percent=100,
-            filename=os.path.basename(final_path),
-            path=final_path,
-        )
+        done = {'filename': os.path.basename(final_path), 'path': final_path}
+        if audio and audio['tags']:
+            on_progress(status='tagging', percent=100)
+            warning = _tag_audio(final_path, audio, info)
+            if warning:
+                done['warning'] = warning
+        on_progress(status='finished', percent=100, **done)
     except Exception as e:
         on_progress(status='error', **errors.classify_error(e))
 
@@ -348,14 +485,16 @@ def validate_twitter_request(url, options):
         'kind': kind,
         'format': fmt,
         'mediaIndex': int(_num(options.get('mediaIndex'), 0, 0, 15)),
-        'quality': options.get('quality'),
+        'quality': int(_num(options.get('quality'), 0, 0, 4320)) or None,
+        'photoSize': options.get('photoSize') if options.get('photoSize') in twitter.PHOTO_SIZES else 'orig',
         'gif': {'fps': int(_num(gif.get('fps'), 15, 5, 30)), 'speed': _num(gif.get('speed'), 1.0, 0.25, 4.0),
                 'width': width, 'start': start, 'end': end},
         'card': {'theme': 'dark' if card.get('theme') == 'dark' else 'light',
                  'showText': card.get('showText', True) is not False,
                  'showDate': card.get('showDate', True) is not False,
                  'showVerified': card.get('showVerified', True) is not False,
-                 'showQuote': card.get('showQuote', True) is not False},
+                 'showQuote': card.get('showQuote', True) is not False,
+                 'scale': int(_num(card.get('scale'), 2, 1, 3))},
     }
 
 
@@ -370,12 +509,14 @@ def get_tweet_info(url, cookies=None):
 
 
 def _download_video(tweet, item, quality, tmp, cookiefile, on_progress):
-    """Downloads one tweet video/GIF into `tmp`, returns its path."""
+    """Downloads one tweet video/GIF into `tmp`, returns (path, height or None).
+    From syndication variants the next size up from `quality` is fetched and
+    the caller downscales; the yt-dlp fallback honours `quality` itself."""
     variant = twitter.pick_variant(item.get('variants'), quality)
     if variant:
         dest = os.path.join(tmp, 'video.mp4')
         twitter.download_file(variant['url'], dest, on_progress)
-        return dest
+        return dest, variant['height'] or None
     # No syndication variants (yt-dlp fallback path): let yt-dlp pick.
     height = quality or 4320
     multi = sum(1 for m in tweet['media'] if m['videoIndex']) > 1
@@ -395,7 +536,7 @@ def _download_video(tweet, item, quality, tmp, cookiefile, on_progress):
         ydl.download([tweet['url']])
     for name in os.listdir(tmp):
         if name.startswith('video.'):
-            return os.path.join(tmp, name)
+            return os.path.join(tmp, name), None
     raise ValueError('No video could be found in this tweet')
 
 
@@ -446,15 +587,19 @@ def _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile
             base += '_%d' % (group.index(item) + 1)
         if item['type'] == 'photo':
             out = os.path.join(tmp, 'photo')
-            twitter.download_photo(item['photoUrl'], out)
+            twitter.download_photo(item['photoUrl'], out, options['photoSize'])
             ext = os.path.splitext(item['photoUrl'].split('?')[0])[1].lstrip('.') or 'jpg'
             return out, ext, base
-        video = _download_video(tweet, item, options['quality'], tmp, cookiefile, on_progress)
+        video, height = _download_video(tweet, item, options['quality'], tmp, cookiefile, on_progress)
         if options['format'] == 'gif':
             g = options['gif']
             out = os.path.join(tmp, 'out.gif')
             render.to_gif(video, out, g['fps'], g['speed'], g['width'], g['start'], g['end'], on_progress, ffmpeg_location)
             return out, 'gif', base
+        if options['quality'] and height and options['quality'] < height:
+            out = os.path.join(tmp, 'scaled.mp4')
+            render.scale_video(video, out, options['quality'], item.get('duration'), on_progress, ffmpeg_location)
+            return out, 'mp4', base
         return video, 'mp4', base
 
     # Tweet card. A quote post also draws the quoted tweet inside the card;
@@ -468,7 +613,8 @@ def _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile
     own_items = [m for m in media if m['from'] == 'own']
     quote_items = [m for m in media if m['from'] == 'quoted'] if quoted else []
     if item and item['type'] != 'photo':
-        video = _download_video(tweet, item, options['quality'], tmp, cookiefile, on_progress)
+        video, _height = _download_video(tweet, item, None, tmp, cookiefile, on_progress)
+        opts = dict(opts, scale=min(opts['scale'], 2))  # video cards are capped at 2x (encoder size limits)
         target = 'quote' if item['from'] == 'quoted' and quoted else 'own'
         aspect = item['width'] / item['height'] if item.get('width') and item.get('height') else None
         out = os.path.join(tmp, 'card.mp4')

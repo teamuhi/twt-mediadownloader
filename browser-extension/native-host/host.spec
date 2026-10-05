@@ -5,7 +5,7 @@ Builds a --onedir distributable (not --onefile): ffmpeg has to ship
 alongside host.exe regardless, so a self-extracting one-file exe would just
 re-extract everything into a temp dir on every launch for no benefit.
 
-Usage (from this directory, once the build venv has `pip install yt-dlp pillow`
+Usage (from this directory, once the build venv has `pip install yt-dlp pillow mutagen`
 and vendor/ffmpeg/ has been populated, see vendor/README.md):
 
     pyinstaller host.spec
@@ -37,7 +37,7 @@ a = Analysis(
     datas=[],
     # yt_dlp.extractor imports its extractor classes statically, so this is
     # belt-and-suspenders rather than strictly required.
-    hiddenimports=collect_submodules('yt_dlp.extractor'),
+    hiddenimports=collect_submodules('yt_dlp.extractor') + collect_submodules('mutagen'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

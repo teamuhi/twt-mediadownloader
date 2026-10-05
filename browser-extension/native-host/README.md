@@ -13,7 +13,7 @@ actual extraction/download logic with `backend/server.py` via
 
 ## Local dev setup (no packaging)
 
-Prerequisite: `pip install yt-dlp pillow` (not vendored in this repo; both
+Prerequisite: `pip install yt-dlp pillow mutagen` (not vendored in this repo; both
 `host.py` and `backend/server.py` import it as a normal dependency).
 
 Firefox finds native messaging hosts via a registry key whose value is the

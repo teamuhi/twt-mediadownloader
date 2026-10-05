@@ -54,12 +54,19 @@ def run_ffmpeg(args, duration, on_progress, status, ffmpeg_location=None):
 
 @functools.lru_cache(maxsize=None)
 def _encoders(ffmpeg_location):
-    """Names of the encoders this ffmpeg build has (empty set if it can't run)."""
+    """Names of every encoder (video and audio) this ffmpeg build has (empty set if it can't run)."""
     try:
         out = subprocess.run([ffmpeg_exe(ffmpeg_location), '-hide_banner', '-encoders'], capture_output=True, text=True, errors='replace', timeout=30).stdout
     except (OSError, subprocess.SubprocessError):
         return frozenset()
-    return frozenset(line.split()[1] for line in out.splitlines() if line.startswith(' V') and len(line.split()) > 1)
+    return frozenset(line.split()[1] for line in out.splitlines() if line[:2] in (' V', ' A') and len(line.split()) > 1)
+
+
+def has_encoder(name, ffmpeg_location=None):
+    """True if ffmpeg has the encoder, or can't be probed at all (the missing
+    ffmpeg then surfaces as a clear error at download time instead of an empty menu)."""
+    encoders = _encoders(ffmpeg_location)
+    return not encoders or name in encoders
 
 
 def h264_args(ffmpeg_location, width, height):
@@ -92,6 +99,14 @@ def to_gif(src, dest, fps, speed, width, start, end, on_progress, ffmpeg_locatio
     args = ['-ss', '%.3f' % start] + (['-t', '%.3f' % clip] if clip else []) + ['-i', src]
     args += ['-filter_complex', graph, '-an', '-loop', '0', dest]
     run_ffmpeg(args, clip / speed if clip else None, on_progress, 'converting', ffmpeg_location)
+
+
+def scale_video(src, dest, height, duration, on_progress, ffmpeg_location=None):
+    """Re-encodes `src` at `height` (width follows, kept even); audio is copied."""
+    args = ['-i', src, '-vf', 'scale=-2:%d:flags=lanczos,format=yuv420p' % height,
+            *h264_args(ffmpeg_location, round(height * 16 / 9), height),
+            '-c:a', 'copy', '-movflags', '+faststart', dest]
+    run_ffmpeg(args, duration, on_progress, 'converting', ffmpeg_location)
 
 
 # ------------------------------------------------------------ card layout
@@ -195,6 +210,16 @@ def _format_date(iso):
     return '%s \u00b7 %s %d, %d' % (dt.strftime('%I:%M %p').lstrip('0'), dt.strftime('%b'), dt.day, dt.year)
 
 
+def _format_short_date(iso):
+    if not iso:
+        return ''
+    try:
+        dt = datetime.fromisoformat(iso.replace('Z', '+00:00')).astimezone()
+    except ValueError:
+        return ''
+    return '%s %d' % (dt.strftime('%b'), dt.day)
+
+
 def _rounded_mask(size, radius, inset=0):
     w, h = size
     m = Image.new('L', (w * SS, h * SS), 0)
@@ -251,10 +276,10 @@ def _fit_height(width, aspect):
     return h - h % 2
 
 
-def _draw_name_row(img, x, top, tweet_author, size, theme, show_verified, max_w, badge, inline_handle):
+def _draw_name_row(img, x, top, tweet_author, size, theme, show_verified, max_w, badge, inline_handle, S=SCALE, suffix=''):
     """Name (+ verified badge) and @handle. Stacked on two 20px lines when
-    `inline_handle` is False (main header), else side by side (quote box)."""
-    S = SCALE
+    `inline_handle` is False (main header), else side by side (quote box),
+    where `suffix` (e.g. " · Oct 3") follows the handle."""
     draw = ImageDraw.Draw(img)
     name = tweet_author['name']
     badge_w = (badge + 4 * S) if show_verified and tweet_author.get('verified') else 0
@@ -271,15 +296,17 @@ def _draw_name_row(img, x, top, tweet_author, size, theme, show_verified, max_w,
         draw = ImageDraw.Draw(img)
     handle = '@' + tweet_author['handle']
     if inline_handle:
-        hx, hbase, room = end_x + 6 * S, base, x + max_w - end_x - 6 * S
+        hx, hbase, room = end_x + 6 * S, base, x + max_w - end_x - 6 * S - (_width(suffix, 'regular', size) if suffix else 0)
     else:
         hx, hbase, room = x, _baseline(top + 20 * S, 20 * S, 'regular', size), max_w
     while len(handle) > 2 and _width(handle, 'regular', size) > room:
         handle = handle[:-2] + '…'
-    _draw_text(draw, hx, hbase, handle, 'regular', size, theme['muted'])
+    hend = _draw_text(draw, hx, hbase, handle, 'regular', size, theme['muted'])
+    if suffix and inline_handle:
+        _draw_text(draw, hend, hbase, suffix, 'regular', size, theme['muted'])
 
 
-def _draw_media(img, rect, spec, radius, theme_name):
+def _draw_media(img, rect, spec, radius, theme_name, S=SCALE):
     """Draws a static media box (one image, or a 2-4 photo grid) with rounded
     corners + border. Returns True instead when `spec` is a video
     placeholder: the box is only reserved (black) for ffmpeg to overlay."""
@@ -292,10 +319,10 @@ def _draw_media(img, rect, spec, radius, theme_name):
         box = _contain(images[0], w, h)
     else:
         box = Image.new('RGBA', (w, h), (0, 0, 0, 255))
-        for im, (cx, cy, cw, ch) in zip(images, _photo_cells(len(images), w, h, 2 * SCALE)):
+        for im, (cx, cy, cw, ch) in zip(images, _photo_cells(len(images), w, h, 2 * S)):
             box.alpha_composite(_cover(im, cw, ch), (cx, cy))
     img.alpha_composite(box, (x, y))
-    img.alpha_composite(frame_overlay(img.size, rect, theme_name, radius))
+    img.alpha_composite(frame_overlay(img.size, rect, theme_name, radius, S))
     return False
 
 
@@ -306,7 +333,7 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
     (video rect, corner radius) or None)."""
     theme_name = opts.get('theme')
     theme = THEMES.get(theme_name, THEMES['light'])
-    S = SCALE
+    S = opts.get('scale') if opts.get('scale') in (1, 2, 3) else SCALE
     W = CARD_W * S
     pad = PAD * S
     author = tweet['author']
@@ -357,14 +384,14 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
     img = Image.new('RGBA', (W, H), theme['bg'] + (255,))
     img.alpha_composite(_circle_avatar(avatar_path, AVATAR * S, author['name'], theme), (pad, pad))
     name_x = pad + (AVATAR + 12) * S
-    _draw_name_row(img, name_x, pad, author, 15 * S, theme, show_verified, W - pad - name_x, 18 * S, False)
+    _draw_name_row(img, name_x, pad, author, 15 * S, theme, show_verified, W - pad - name_x, 18 * S, False, S)
     draw = ImageDraw.Draw(img)
     for i, line in enumerate(text_lines):
         _draw_text(draw, pad, _baseline(text_y + i * LINE_H * S, LINE_H * S, 'regular', 17 * S), line, 'regular', 17 * S, theme['text'])
 
     video = None
     if own_rect:
-        if _draw_media(img, own_rect, own, RADIUS * S, theme_name):
+        if _draw_media(img, own_rect, own, RADIUS * S, theme_name, S):
             video = (own_rect, RADIUS * S)
 
     if q:
@@ -375,11 +402,13 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
         qa = 20 * S
         img.alpha_composite(_circle_avatar(quote_avatar_path, qa, quoted['author']['name'], theme), (q['inner_x'], q['head_y']))
         text_x = q['inner_x'] + qa + 8 * S
-        _draw_name_row(img, text_x, q['head_y'], quoted['author'], 15 * S, theme, show_verified, q['inner_x'] + q['inner_w'] - text_x, 16 * S, True)
+        qdate = _format_short_date(quoted.get('createdAt')) if opts.get('showDate', True) else ''
+        _draw_name_row(img, text_x, q['head_y'], quoted['author'], 15 * S, theme, show_verified, q['inner_x'] + q['inner_w'] - text_x, 16 * S, True, S,
+                       ' · ' + qdate if qdate else '')
         draw = ImageDraw.Draw(img)
         for i, line in enumerate(q['lines']):
             _draw_text(draw, q['inner_x'], _baseline(q['text_y'] + i * 20 * S, 20 * S, 'regular', 15 * S), line, 'regular', 15 * S, theme['text'])
-        if q['media'] and _draw_media(img, q['media'], quote, QMEDIA_RADIUS * S, theme_name):
+        if q['media'] and _draw_media(img, q['media'], quote, QMEDIA_RADIUS * S, theme_name, S):
             video = (q['media'], QMEDIA_RADIUS * S)
 
     if date:
@@ -387,7 +416,7 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
     return img, video
 
 
-def frame_overlay(size, rect, theme_name, radius=RADIUS * SCALE):
+def frame_overlay(size, rect, theme_name, radius=RADIUS * SCALE, S=SCALE):
     """Transparent overlay that fills a media box's rounded corners with the
     card background and draws the border ring."""
     theme = THEMES.get(theme_name, THEMES['light'])
@@ -395,7 +424,7 @@ def frame_overlay(size, rect, theme_name, radius=RADIUS * SCALE):
     outer = _rounded_mask((w, h), radius)
     ov = Image.new('RGBA', size, (0, 0, 0, 0))
     _paste_color(ov, theme['bg'], ImageChops.invert(outer), (x, y))
-    ring = ImageChops.subtract(outer, _rounded_mask((w, h), radius, inset=BORDER * SCALE))
+    ring = ImageChops.subtract(outer, _rounded_mask((w, h), radius, inset=BORDER * S))
     _paste_color(ov, theme['border'], ring, (x, y))
     return ov
 
@@ -451,7 +480,7 @@ def render_card_video(tweet, video_path, target, opts, dest, tmp_dir, avatar_pat
     bg_path = os.path.join(tmp_dir, 'card-bg.png')
     fg_path = os.path.join(tmp_dir, 'card-fg.png')
     img.convert('RGB').save(bg_path, 'PNG')
-    frame_overlay(img.size, (x, y, w, h), opts.get('theme'), radius).save(fg_path, 'PNG')
+    frame_overlay(img.size, (x, y, w, h), opts.get('theme'), radius, img.width // CARD_W).save(fg_path, 'PNG')
 
     graph = (
         '[1:v]scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v];'
