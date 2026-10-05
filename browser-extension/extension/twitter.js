@@ -21,7 +21,7 @@
     preview: $('tw-preview'), trim: $('tw-trim'), range: $('tw-range'),
     start: $('tw-start'), end: $('tw-end'), startT: $('tw-start-t'), endT: $('tw-end-t'),
     photoOpts: $('tw-photo-opts'), photoSize: $('tw-photo-size'), cardScale: $('tw-card-scale'),
-    cardTheme: $('tw-card-theme'), showText: $('tw-show-text'), showDate: $('tw-show-date'), showVerified: $('tw-show-verified'),
+    cardTheme: $('tw-card-theme'), photoLayout: $('tw-photo-layout'), photoLayoutRow: $('tw-photo-layout-row'), showText: $('tw-show-text'), showDate: $('tw-show-date'), showVerified: $('tw-show-verified'),
     showQuote: $('tw-show-quote'), showQuoteLabel: $('tw-show-quote-label'),
     quote: $('card-quote'), cardOwn: $('card-own'),
     card: $('tw-card'), cardAvatar: $('card-avatar'), cardName: $('card-name'), cardVerified: $('card-verified'),
@@ -34,7 +34,7 @@
   let tweet = null;
   let selected = 0;
   let kind = 'media';
-  let card = { theme: 'light', showText: true, showDate: true, showVerified: true, showQuote: true, scale: 2 };
+  let card = { theme: 'light', showText: true, showDate: true, showVerified: true, showQuote: true, scale: 2, photoLayout: 'grid' };
   let trim = { start: 0, end: 0 };
 
   const currentItem = () => (tweet && tweet.media[selected]) || null;
@@ -132,21 +132,30 @@
     return withTime ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · ' + day : day;
   }
 
-  // Thumbnails laid out like the rendered card (1, 2, 3 or 4 images).
-  function fillGrid(grid, items) {
+  // Thumbnails laid out like the rendered card (1, 2, 3 or 4 images). `layout` 'row' / 'column'
+  // joins 2+ photos uncropped into one strip instead of the cropped grid.
+  function fillGrid(grid, items, layout) {
     grid.replaceChildren();
     const shown = items.slice(0, 4);
     grid.classList.toggle('hidden', !shown.length);
     grid.dataset.n = shown.length;
+    const strip = shown.length > 1 && (layout === 'row' || layout === 'column') && !shown.some((m) => m.index === selected && m.type !== 'photo');
+    if (strip) grid.dataset.layout = layout;
+    else delete grid.dataset.layout;
+    const ratios = shown.map((m) => (m.width && m.height ? m.width / m.height : 4 / 3));
     const first = shown[0];
-    if (shown.length === 1 && first.width && first.height) {
+    if (strip) {
+      const sum = ratios.reduce((a, r) => a + (layout === 'row' ? r : 1 / r), 0);
+      grid.style.setProperty('--ar', String(layout === 'row' ? sum : Math.max(1 / 3, 1 / sum)));
+    } else if (shown.length === 1 && first.width && first.height) {
       grid.style.setProperty('--ar', String(Math.min(2, Math.max(0.8, first.width / first.height))));
     } else {
       grid.style.removeProperty('--ar');
     }
-    shown.forEach((m) => {
+    shown.forEach((m, i) => {
       const cell = document.createElement('div');
       cell.className = 'mg-cell' + (m.index === selected ? ' is-selected' : '');
+      if (strip) cell.style.flexGrow = String(layout === 'row' ? ratios[i] : 1 / ratios[i]);
       cell.dataset.index = m.index;
       const img = document.createElement('img');
       img.alt = '';
@@ -171,7 +180,7 @@
     const text = q('q-text');
     text.textContent = quoted.text;
     text.classList.toggle('hidden', !(opts.showText && quoted.text));
-    fillGrid(q('q-media'), items);
+    fillGrid(q('q-media'), items, opts.photoLayout);
   }
 
   const quoteItems = () => (tweet.media || []).filter((m) => m.from === 'quoted');
@@ -179,6 +188,10 @@
   function renderCardPreview() {
     el.card.dataset.cardTheme = card.theme;
     setSeg(el.cardTheme, 'theme', card.theme);
+    setSeg(el.photoLayout, 'layout', card.photoLayout);
+    const photoGroups = [tweet.media.filter((m) => m.from === 'own')];
+    if (tweet.quoted && card.showQuote) photoGroups.push(quoteItems());
+    el.photoLayoutRow.classList.toggle('hidden', !photoGroups.some((g) => g.length > 1));
     el.showText.checked = card.showText;
     el.showDate.checked = card.showDate;
     el.showVerified.checked = card.showVerified;
@@ -193,7 +206,7 @@
     el.cardText.textContent = text;
     el.cardText.classList.toggle('hidden', !(card.showText && text));
 
-    fillGrid(el.cardOwn, tweet.media.filter((m) => m.from === 'own'));
+    fillGrid(el.cardOwn, tweet.media.filter((m) => m.from === 'own'), card.photoLayout);
 
     const quoted = tweet.quoted;
     el.showQuoteLabel.classList.toggle('hidden', !quoted);
@@ -374,6 +387,14 @@
     const tab = e.target.closest('[role="tab"]');
     if (!tab) return;
     card.theme = tab.dataset.theme;
+    savePrefs();
+    renderCardPreview();
+  });
+
+  el.photoLayout.addEventListener('click', (e) => {
+    const tab = e.target.closest('[role="tab"]');
+    if (!tab) return;
+    card.photoLayout = tab.dataset.layout;
     savePrefs();
     renderCardPreview();
   });

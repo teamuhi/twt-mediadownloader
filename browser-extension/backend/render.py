@@ -122,6 +122,9 @@ BORDER = 1
 LINE_H = 24
 GAP = 12
 MAX_TALL = 1.25
+MERGED_MAX_TALL = 3
+MERGED_MAX_SIDE = 3600
+PHOTO_LAYOUTS = ('grid', 'row', 'column')
 GRID_H = 318
 QPAD = 12  # padding inside the quoted-tweet box
 QMEDIA_RADIUS = 12
@@ -271,9 +274,14 @@ def _spec_aspect(spec):
     return spec.get('aspect') or 16 / 9
 
 
-def _fit_height(width, aspect):
-    h = int(min(width / aspect, width * MAX_TALL))
+def _fit_height(width, aspect, max_tall=MAX_TALL):
+    h = int(min(width / aspect, width * max_tall))
     return h - h % 2
+
+
+def _media_height(width, spec):
+    """Box height for a media spec; a stitched/stacked strip may run taller than a single photo."""
+    return _fit_height(width, _spec_aspect(spec), MERGED_MAX_TALL if spec.get('merged') else MAX_TALL)
 
 
 def _draw_name_row(img, x, top, tweet_author, size, theme, show_verified, max_w, badge, inline_handle, S=SCALE, suffix=''):
@@ -353,7 +361,7 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
     own_rect = None
     if own:
         mw = MEDIA_W * S
-        own_rect = (pad, y + GAP * S, mw, _fit_height(mw, _spec_aspect(own)))
+        own_rect = (pad, y + GAP * S, mw, _media_height(mw, own))
         y += GAP * S + own_rect[3]
 
     q = None
@@ -369,7 +377,7 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
             q['text_y'] = cy + 4 * S
             cy = q['text_y'] + len(q['lines']) * 20 * S
         if quote:
-            q['media'] = (inner_x, cy + 8 * S, inner_w, _fit_height(inner_w, _spec_aspect(quote)))
+            q['media'] = (inner_x, cy + 8 * S, inner_w, _media_height(inner_w, quote))
             cy += 8 * S + q['media'][3]
         q['size'] = (MEDIA_W * S, cy + QPAD * S - box_y)
         y = box_y + q['size'][1]
@@ -454,14 +462,41 @@ def _photo_cells(n, w, h, gap):
             (0, half_h + gap, half_w, h - half_h - gap), (half_w + gap, half_h + gap, w - half_w - gap, h - half_h - gap)]
 
 
-def _spec(paths):
+def _merge(images, layout):
+    """Joins photos uncropped into one strip: 'row' side by side at a common height,
+    'column' stacked at a common width, with a thin black divider like the grid."""
+    row = layout == 'row'
+    unit = min((im.height if row else im.width) for im in images)
+    gap = max(2, round(unit * 0.006))
+    parts = []
+    for im in images:
+        k = unit / (im.height if row else im.width)
+        parts.append(im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS))
+    total = sum((p.width if row else p.height) for p in parts) + gap * (len(parts) - 1)
+    strip = Image.new('RGBA', (total, unit) if row else (unit, total), (0, 0, 0, 255))
+    pos = 0
+    for p in parts:
+        strip.alpha_composite(p, (pos, 0) if row else (0, pos))
+        pos += (p.width if row else p.height) + gap
+    if max(strip.size) > MERGED_MAX_SIDE:
+        k = MERGED_MAX_SIDE / max(strip.size)
+        strip = strip.resize((max(1, round(strip.width * k)), max(1, round(strip.height * k))), Image.LANCZOS)
+    return strip
+
+
+def _spec(paths, layout='grid'):
     images = [Image.open(p).convert('RGBA') for p in (paths or [])[:4]]
-    return {'images': images} if images else None
+    if not images:
+        return None
+    if len(images) > 1 and layout in ('row', 'column'):
+        return {'images': [_merge(images, layout)], 'merged': True}
+    return {'images': images}
 
 
 def render_card_png(tweet, own_paths, quote_paths, opts, dest, avatar_path=None, quote_avatar_path=None):
     """Photo / text-only card (own and quoted media as static images) -> PNG."""
-    img, _video = build_card(tweet, opts, avatar_path, _spec(own_paths), _spec(quote_paths), quote_avatar_path)
+    layout = opts.get('photoLayout')
+    img, _video = build_card(tweet, opts, avatar_path, _spec(own_paths, layout), _spec(quote_paths, layout), quote_avatar_path)
     img.convert('RGB').save(dest, 'PNG')
 
 
@@ -473,8 +508,9 @@ def render_card_video(tweet, video_path, target, opts, dest, tmp_dir, avatar_pat
     if target == 'quote' and not (tweet.get('quoted') and opts.get('showQuote', True)):
         target, own_paths = 'own', []  # quote box hidden: play it in the main box instead
     placeholder = {'aspect': aspect or 16 / 9}
-    own = placeholder if target == 'own' else _spec(own_paths)
-    quote = placeholder if target == 'quote' else _spec(quote_paths)
+    layout = opts.get('photoLayout')
+    own = placeholder if target == 'own' else _spec(own_paths, layout)
+    quote = placeholder if target == 'quote' else _spec(quote_paths, layout)
     img, video = build_card(tweet, opts, avatar_path, own, quote, quote_avatar_path)
     (x, y, w, h), radius = video
     bg_path = os.path.join(tmp_dir, 'card-bg.png')

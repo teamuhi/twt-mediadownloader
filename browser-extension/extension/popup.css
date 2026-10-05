@@ -1427,6 +1427,21 @@ video.hero-media {
   grid-row: span 2;
 }
 
+/* Uncropped strip (Side by side / Stacked): cells share the strip in proportion to their
+   own aspect ratio (flex-grow set in twitter.js), the container takes the combined ratio. */
+.media-grid[data-layout] {
+  display: flex;
+  aspect-ratio: var(--ar, 16 / 9);
+}
+
+.media-grid[data-layout="column"] {
+  flex-direction: column;
+}
+
+.media-grid[data-layout] .mg-cell {
+  flex: 1 1 0;
+}
+
 .mg-cell {
   position: relative;
   min-width: 0;
