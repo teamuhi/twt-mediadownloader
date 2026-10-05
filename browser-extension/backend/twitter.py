@@ -93,18 +93,51 @@ def _clean_text(data):
         # Offsets are in code points, which is what Python slices by.
         text = text[rng[0]:rng[1]]
     text = html.unescape(text)
-    return re.sub(r'\s*https://t\.co/\w+\s*$', '', text).strip()
+    urls = {u['url']: u for u in (data.get('entities') or {}).get('urls') or [] if u.get('url')}
+    # A trailing link is X's own attachment (media, or the quoted post's permalink): drop it.
+    # A trailing link to an outside page is real content and stays.
+    tail = re.search(r'\s*(https://t\.co/\w+)\s*$', text)
+    if tail:
+        link = urls.get(tail.group(1))
+        if not link or re.search(r'(?:x|twitter)\.com/[^/]+/status/', link.get('expanded_url') or ''):
+            text = text[:tail.start()]
+    # Remaining t.co links are shown the way X shows them: as the display URL.
+    text = re.sub(r'https://t\.co/\w+', lambda m: (urls.get(m.group(0)) or {}).get('display_url') or '', text)
+    return text.strip()
 
 
 def _variants(details):
-    """mp4 variants as [{url, height, bitrate}], best first."""
+    """mp4 variants as [{url, height, bitrate}], best first. Variants whose URL
+    carries no WxH (GIF clips) take the media's original height."""
     out = []
+    fallback = int((details.get('original_info') or {}).get('height') or 0)
     for v in (details.get('video_info') or {}).get('variants') or []:
         if v.get('content_type') != 'video/mp4' or not v.get('url'):
             continue
         m = re.search(r'/(\d+)x(\d+)/', v['url'])
-        out.append({'url': v['url'], 'height': int(m.group(2)) if m else 0, 'bitrate': v.get('bitrate') or 0})
+        out.append({'url': v['url'], 'height': int(m.group(2)) if m else fallback, 'bitrate': v.get('bitrate') or 0})
     return sorted(out, key=lambda v: (v['height'], v['bitrate']), reverse=True)
+
+
+STANDARD_HEIGHTS = (1080, 720, 480, 360, 240)
+
+
+def with_standard_heights(qualities):
+    """Adds the standard heights below the best native one (marked native=False;
+    ffmpeg downscales to them). `qualities` is [{height, estimated_bytes}], best
+    first; size estimates scale the nearest larger native stream by pixel count."""
+    native = [dict(q, native=True) for q in qualities]
+    if not native:
+        return native
+    top = max(q['height'] for q in native)
+    have = {q['height'] for q in native}
+    for h in STANDARD_HEIGHTS:
+        if h >= top or h in have:
+            continue
+        base = min((q for q in native if q['height'] > h), key=lambda q: q['height'], default=None)
+        size = base['estimated_bytes'] * (h / base['height']) ** 2 if base and base.get('estimated_bytes') else None
+        native.append({'height': h, 'estimated_bytes': size, 'native': False})
+    return sorted(native, key=lambda q: q['height'], reverse=True)
 
 
 def _media_from_syndication(items, origin='own', start=0):
@@ -143,6 +176,7 @@ def _media_from_syndication(items, origin='own', start=0):
                     seen.add(v['height'])
                     size = v['bitrate'] * item['duration'] / 8 if v['bitrate'] and item['duration'] else None
                     item['qualities'].append({'height': v['height'], 'estimated_bytes': size})
+            item['qualities'] = with_standard_heights(item['qualities'])
             if item['variants']:
                 item['previewUrl'] = min(item['variants'], key=lambda v: (v['height'] or 9999, v['bitrate']))['url']
         else:
@@ -210,7 +244,7 @@ def _from_ytdlp(url, tweet_id, cookiefile):
             'photoUrl': None,
             'videoIndex': n,
             'variants': [],
-            'qualities': core.video_qualities_from_info(e),
+            'qualities': with_standard_heights(core.video_qualities_from_info(e)),
         })
     handle = info.get('uploader_id') or ''
     return {
@@ -302,18 +336,23 @@ def download_file(url, dest, on_progress=None):
                 on_progress(status='downloading', percent=round(done * 100 / total, 1))
 
 
-def download_photo(url, dest):
+PHOTO_SIZES = ('orig', 'large', 'medium', 'small')
+
+
+def download_photo(url, dest, size='orig'):
     base = url.split('?')[0]
-    download_file(base + '?name=orig', dest)
+    download_file(base + '?name=' + (size if size in PHOTO_SIZES else 'orig'), dest)
 
 
 def pick_variant(variants, quality):
-    """Best variant at or under `quality` (height); else the best overall."""
+    """The smallest variant at least `quality` tall (an exact match, else the
+    next size up, which the caller downscales); the best one when `quality` is
+    unset or above everything."""
     if not variants:
         return None
     try:
         limit = int(quality)
     except (TypeError, ValueError):
         return variants[0]
-    under = [v for v in variants if v['height'] and v['height'] <= limit]
-    return under[0] if under else variants[0]
+    enough = [v for v in variants if v['height'] >= limit]
+    return min(enough, key=lambda v: (v['height'], -v['bitrate'])) if enough else variants[0]

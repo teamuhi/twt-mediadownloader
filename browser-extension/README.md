@@ -2,8 +2,8 @@
 
 Adds a toolbar button that downloads Twitter/X media (as-is, as a GIF, or
 rendered into a tweet card) and, on a second tab, the video or audio on
-any page as MP4 (with a resolution picker), or extracts audio as MP3 (with a bitrate
-picker) or WAV. Works on any site [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+any page as MP4 (with a resolution picker), or extracts audio as MP3, M4A, Opus,
+OGG, FLAC, ALAC or WAV, tagged with title, artist and cover art. Works on any site [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 supports (well over a thousand), not just YouTube, though YouTube is the
 only one this has actually been tested against; other sites are "should
 work, tell me if it doesn't" rather than verified. Estimated file size is
@@ -115,11 +115,20 @@ manifest rather than a store's signature.
 
 ## Using it
 
-Open a page with video or audio, click the toolbar icon, choose MP4 (with
-resolution), MP3 (with bitrate), or WAV, each showing an estimated file
-size, and click Download. Not every site has all three: an audio-only page
-(a podcast, a SoundCloud track) won't have an MP4 option with any
-resolutions, for instance.
+Open a page with video or audio, click the toolbar icon and pick **Video**
+(MP4, with resolution) or **Audio**, each showing an estimated file size, and
+click Download. Not every site has both: an audio-only page (a podcast, a
+SoundCloud track) won't have any video resolutions, for instance.
+
+**Audio** has its own music-style layout: a "now playing" card (cover, title,
+artist, album, year), a grid of formats (MP3, M4A, Opus, OGG, FLAC, ALAC, WAV;
+formats the bundled ffmpeg can't encode are hidden) and a bitrate picker for
+the lossy ones. Title, artist, album, date, genre, track number, the video's
+link and the thumbnail as cover art are filled in **automatically** (an
+"Artist - Title" video title is split, and "(Official Video)" style noise is
+dropped). Turn on **Edit metadata before downloading** to change any field or
+replace/remove the cover; **Square cover** crops 16:9 thumbnails to a square,
+and **Embed tags & cover art** switches tagging off.
 
 The filename box is pre-filled with the video's own title as gray
 placeholder text; type over it to save under a different name.
@@ -155,19 +164,23 @@ itself; you can switch tabs by hand at any time. A tweet with several media
 items shows a thumbnail strip to pick which one to download.
 
 - **Media only** saves the tweet's own file: the video as MP4 (pick a
-  quality), a photo as the original-quality image, or a video/GIF **converted
-  to a GIF**. For GIF you can set the frame rate, speed, resolution (width),
+  resolution; sizes X doesn't serve, such as 480p, are downscaled with ffmpeg
+  and marked "scaled"), a photo at Original, Large, Medium or Small size, or a
+  video/GIF **converted to a GIF**. For GIF you can set the frame rate, speed, resolution (width),
   and start/end points. A looping preview plays the chosen clip, and the
   **Set start** / **Set end** buttons take the preview's current time.
 - **Tweet card** renders the tweet like a card: profile picture, name, @handle,
   and (each with its own checkbox) the tweet text, date/time and verified
   badge, in a **light or dark card theme** (independent of the popup's
   theme). A video or GIF tweet becomes an MP4 with the card around the
-  video; a photo tweet becomes a PNG (up to four photos in a grid).
+  video; a photo tweet becomes a PNG (up to four photos in a grid). The
+  **Resolution** row renders the card at 1x, 2x (default) or 3x width (video
+  cards stop at 2x).
 
 A **quote post** (a tweet that embeds another tweet) is rendered the way X
 shows it: the quoting tweet, then the quoted tweet in a bordered box with its
-own avatar, name, text and media (a **Quote** checkbox turns that off). The
+own avatar, name, date, text and media (a **Quote** checkbox turns that off).
+The quoted post is also previewed in Media only mode, above the picture. The
 quoted post's media also appears in the thumbnail strip, marked **QT**, and
 can be downloaded or turned into a GIF like any other. Whichever video you
 select plays in its own spot in the card, and the other post's media is shown

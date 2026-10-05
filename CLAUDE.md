@@ -9,3 +9,4 @@
 
 4. After executing a prompt update CLAUDELOGS.md for handoff to other AI agents incase of limit
 
+5. When pushing a commit/release/ or any github push, DO NOT put the AI agents name

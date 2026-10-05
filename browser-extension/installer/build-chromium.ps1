@@ -4,7 +4,7 @@
 # store-free distribution.
 #
 # There is no hand-maintained second copy of popup.js/popup.css/popup.html:
-# this script copies popup.js/twitter.js/popup.css verbatim from extension/ and derives
+# this script copies popup.js/youtube.js/twitter.js/popup.css verbatim from extension/ and derives
 # popup.html from extension/popup.html by inserting one <script> tag for the
 # browser-polyfill shim, so extension/ (the shipping Firefox extension)
 # never needs to be touched or hand-kept-in-sync.
@@ -52,6 +52,7 @@ Copy-Item (Join-Path $chromiumSrcDir 'vendor\browser-polyfill.js') (Join-Path $o
 
 Write-Host '--- Copying shared files from extension/ ---'
 Copy-Item (Join-Path $extensionDir 'popup.js') $outDir
+Copy-Item (Join-Path $extensionDir 'youtube.js') $outDir
 Copy-Item (Join-Path $extensionDir 'twitter.js') $outDir
 Copy-Item (Join-Path $extensionDir 'popup.css') $outDir
 Copy-Item (Join-Path $extensionDir 'icons') $outDir -Recurse

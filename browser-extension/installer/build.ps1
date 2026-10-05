@@ -4,7 +4,7 @@
 # script's own location.
 #
 # Prerequisites (one-time):
-#   - PyInstaller + deps: pip install pyinstaller yt-dlp pillow
+#   - PyInstaller + deps: pip install pyinstaller yt-dlp pillow mutagen
 #   - browser-extension/native-host/vendor/ffmpeg/ffmpeg.exe and ffprobe.exe
 #     (see native-host/vendor/README.md for where to get an LGPL build)
 #   - Inno Setup 6 (ISCC.exe on PATH, or edit $iscc below):

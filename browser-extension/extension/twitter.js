@@ -1,6 +1,7 @@
-// Twitter/X panel: media-only download (MP4, optional GIF conversion with
-// frame rate / speed / size / trim) and tweet-card download. Registers itself
-// into popup.js's `panels` registry.
+// Twitter/X panel: media-only download (MP4 at a chosen resolution, photos at a
+// chosen size, optional GIF conversion with frame rate / speed / size / trim)
+// and tweet-card download (1x-3x), with the quoted post previewed in both.
+// Registers itself into popup.js's `panels` registry.
 
 (() => {
   const FPS_OPTIONS = [10, 12, 15, 20, 24, 30];
@@ -8,29 +9,32 @@
   const WIDTH_OPTIONS = [720, 540, 480, 360, 240];
   const MIN_CLIP = 0.1; // seconds
   const GIF_BYTES_PER_PIXEL_FRAME = 0.12; // rough palette+LZW average, for the size hint
+  const CARD_BASE_W = 598; // px at 1x, matches backend render.CARD_W
+  const CARD_SCALES = [1, 2, 3];
+  const PHOTO_PRESETS = [['large', 'Large', 2048], ['medium', 'Medium', 1200], ['small', 'Small', 680]]; // twimg ?name= sizes
 
   const el = {
-    author: document.querySelector('.tw-author'), avatar: $('tw-avatar'), name: $('tw-name'), verified: $('tw-verified'), handle: $('tw-handle'),
     text: $('tw-text'), strip: $('tw-strip'), title: $('tw-title'),
     kind: $('tw-kind'), mediaOpts: $('tw-media-opts'), cardOpts: $('tw-card-opts'),
     formats: $('tw-formats'), quality: $('tw-quality'), gifEst: $('tw-gif-est'), gifOpts: $('tw-gif-opts'),
     fps: $('tw-fps'), speed: $('tw-speed'), width: $('tw-width'),
     preview: $('tw-preview'), trim: $('tw-trim'), range: $('tw-range'),
     start: $('tw-start'), end: $('tw-end'), startT: $('tw-start-t'), endT: $('tw-end-t'),
-    photoHint: $('tw-photo-hint'),
+    photoOpts: $('tw-photo-opts'), photoSize: $('tw-photo-size'), cardScale: $('tw-card-scale'),
     cardTheme: $('tw-card-theme'), showText: $('tw-show-text'), showDate: $('tw-show-date'), showVerified: $('tw-show-verified'),
     showQuote: $('tw-show-quote'), showQuoteLabel: $('tw-show-quote-label'),
-    quote: $('card-quote'), quoteAvatar: $('quote-avatar'), quoteName: $('quote-name'), quoteHandle: $('quote-handle'),
-    quoteText: $('quote-text'), quoteMedia: $('quote-media'),
+    quote: $('card-quote'), cardOwn: $('card-own'),
     card: $('tw-card'), cardAvatar: $('card-avatar'), cardName: $('card-name'), cardVerified: $('card-verified'),
-    cardHandle: $('card-handle'), cardText: $('card-text'), cardMedia: $('card-media'), cardDate: $('card-date'),
-    cardOut: $('tw-card-out'),
+    cardHandle: $('card-handle'), cardText: $('card-text'), cardDate: $('card-date'),
+    heroImg: $('tw-hero-img'), qualityRow: $('tw-quality-row'), ext: $('tw-ext'),
   };
+
+  el.quote.append($('quote-tpl').content.cloneNode(true));
 
   let tweet = null;
   let selected = 0;
   let kind = 'media';
-  let card = { theme: 'light', showText: true, showDate: true, showVerified: true, showQuote: true };
+  let card = { theme: 'light', showText: true, showDate: true, showVerified: true, showQuote: true, scale: 2 };
   let trim = { start: 0, end: 0 };
 
   const currentItem = () => (tweet && tweet.media[selected]) || null;
@@ -121,6 +125,57 @@
     if (el.preview.src && moved) el.preview.currentTime = moved === 'start' ? trim.start : Math.max(trim.start, trim.end - 0.1);
   }
 
+  function formatDate(iso, withTime) {
+    const date = iso && new Date(iso);
+    if (!date || isNaN(date)) return '';
+    const day = date.toLocaleDateString('en-US', withTime ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' });
+    return withTime ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · ' + day : day;
+  }
+
+  // Thumbnails laid out like the rendered card (1, 2, 3 or 4 images).
+  function fillGrid(grid, items) {
+    grid.replaceChildren();
+    const shown = items.slice(0, 4);
+    grid.classList.toggle('hidden', !shown.length);
+    grid.dataset.n = shown.length;
+    const first = shown[0];
+    if (shown.length === 1 && first.width && first.height) {
+      grid.style.setProperty('--ar', String(Math.min(2, Math.max(0.8, first.width / first.height))));
+    } else {
+      grid.style.removeProperty('--ar');
+    }
+    shown.forEach((m) => {
+      const cell = document.createElement('div');
+      cell.className = 'mg-cell' + (m.index === selected ? ' is-selected' : '');
+      cell.dataset.index = m.index;
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = m.thumbnail || '';
+      cell.append(img);
+      if (m.type !== 'photo') cell.append(textNode('span', 'mg-play', '▶'));
+      grid.append(cell);
+    });
+  }
+
+  // Fills a quote box built from #quote-tpl with the quoted post.
+  function renderQuote(box, quoted, items, opts) {
+    const q = (cls) => box.querySelector('.' + cls);
+    const avatar = q('q-avatar');
+    avatar.src = quoted.author.avatarUrl || '';
+    avatar.classList.toggle('hidden', !quoted.author.avatarUrl);
+    q('q-name').textContent = quoted.author.name;
+    q('q-verified').classList.toggle('hidden', !(quoted.author.verified && opts.showVerified));
+    q('q-handle').textContent = '@' + quoted.author.handle;
+    const date = opts.showDate ? formatDate(quoted.createdAt) : '';
+    q('q-date').textContent = date ? '· ' + date : '';
+    const text = q('q-text');
+    text.textContent = quoted.text;
+    text.classList.toggle('hidden', !(opts.showText && quoted.text));
+    fillGrid(q('q-media'), items);
+  }
+
+  const quoteItems = () => (tweet.media || []).filter((m) => m.from === 'quoted');
+
   function renderCardPreview() {
     el.card.dataset.cardTheme = card.theme;
     setSeg(el.cardTheme, 'theme', card.theme);
@@ -138,40 +193,52 @@
     el.cardText.textContent = text;
     el.cardText.classList.toggle('hidden', !(card.showText && text));
 
-    const item = currentItem();
-    const ownItem = tweet.media.find((m) => m.from === 'own');
-    el.cardMedia.classList.toggle('hidden', !ownItem);
-    if (ownItem) {
-      el.cardMedia.src = ownItem.thumbnail || '';
-      el.cardMedia.style.aspectRatio = ownItem.width && ownItem.height ? String(Math.max(ownItem.width / ownItem.height, 0.8)) : '16 / 9';
-    }
+    fillGrid(el.cardOwn, tweet.media.filter((m) => m.from === 'own'));
 
     const quoted = tweet.quoted;
-    const quoteItem = tweet.media.find((m) => m.from === 'quoted');
     el.showQuoteLabel.classList.toggle('hidden', !quoted);
     el.quote.classList.toggle('hidden', !(quoted && card.showQuote));
-    if (quoted) {
-      el.quoteAvatar.src = quoted.author.avatarUrl || '';
-      el.quoteAvatar.classList.toggle('hidden', !quoted.author.avatarUrl);
-      el.quoteName.textContent = quoted.author.name;
-      el.quoteHandle.textContent = '@' + quoted.author.handle;
-      el.quoteText.textContent = quoted.text;
-      el.quoteText.classList.toggle('hidden', !(card.showText && quoted.text));
-      el.quoteMedia.classList.toggle('hidden', !quoteItem);
-      if (quoteItem) el.quoteMedia.src = quoteItem.thumbnail || '';
-    }
+    if (quoted) renderQuote(el.quote, quoted, quoteItems(), card);
 
-    const date = createdAt && new Date(createdAt);
-    const showDate = card.showDate && date && !isNaN(date);
-    el.cardDate.classList.toggle('hidden', !showDate);
-    if (showDate) {
-      el.cardDate.textContent = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · ' +
-        date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    }
+    const when = card.showDate ? formatDate(createdAt, true) : '';
+    el.cardDate.classList.toggle('hidden', !when);
+    el.cardDate.textContent = when;
 
-    el.cardOut.textContent = !item ? 'Saved as a PNG image (text only).'
-      : isVideo(item) ? 'Saved as an MP4 video with the card around it.'
-        : 'Saved as a PNG image' + (tweet.media.filter((m) => m.type === 'photo').length > 1 ? ' (up to 4 photos).' : '.');
+    renderScaleOptions();
+  }
+
+  // 1x-3x with the output width; video cards are limited to 2x (see cardScale()).
+  function renderScaleOptions() {
+    const video = isVideo(currentItem());
+    if (!el.cardScale.options.length) {
+      CARD_SCALES.forEach((s) => el.cardScale.appendChild(new Option('', s)));
+    }
+    Array.from(el.cardScale.options).forEach((opt) => {
+      const s = Number(opt.value);
+      opt.disabled = video && s > 2;
+      opt.textContent = s + '× · ' + CARD_BASE_W * s + ' px wide' + (opt.disabled ? ' · images only' : '');
+    });
+    el.cardScale.value = String(cardScale());
+  }
+
+  // Video cards are rendered at 2x at most (encoder size limits).
+  function cardScale() {
+    return isVideo(currentItem()) ? Math.min(card.scale, 2) : card.scale;
+  }
+
+  // What the current selection will be saved as; drives the footer button, hint and filename badge.
+  function output() {
+    const item = currentItem();
+    if (kind === 'card') {
+      if (!item) return { label: 'PNG', ext: '.png', hint: 'Saved as a PNG image (text only).' };
+      if (isVideo(item)) return { label: 'MP4', ext: '.mp4', hint: 'Saved as an MP4 video with the card around it.' };
+      const many = tweet.media.filter((m) => m.type === 'photo').length > 1;
+      return { label: 'PNG', ext: '.png', hint: 'Saved as a PNG image' + (many ? ' (up to 4 photos).' : '.') };
+    }
+    if (!isVideo(item)) return { label: 'Image', ext: '', hint: '' };
+    return format() === 'gif'
+      ? { label: 'GIF', ext: '.gif', hint: 'Converted from the video.' }
+      : { label: 'MP4', ext: '.mp4', hint: '' };
   }
 
   function render() {
@@ -189,13 +256,36 @@
       const video = isVideo(item);
       gifOpen = video && format() === 'gif';
       el.formats.classList.toggle('hidden', !video);
-      el.photoHint.classList.toggle('hidden', video);
+      el.qualityRow.classList.toggle('hidden', gifOpen);
+      el.photoOpts.classList.toggle('hidden', video);
       el.gifOpts.classList.toggle('hidden', !gifOpen);
     }
-    // The card preview already shows author and text, and the GIF options need the room.
-    el.author.classList.toggle('hidden', kind === 'card');
-    el.text.classList.toggle('hidden', !tweet.text || kind !== 'media' || gifOpen);
+
+    // One hero slot: the card, the looping GIF clip, or the selected media's still.
+    const showPreview = kind === 'media' && gifOpen && !!item.previewUrl;
+    const showStill = kind === 'media' && hasMedia && !showPreview && !!item.thumbnail;
+    el.card.classList.toggle('hidden', kind !== 'card');
+    el.preview.classList.toggle('hidden', !showPreview);
+    el.heroImg.classList.toggle('hidden', !showStill);
+    if (showStill && el.heroImg.getAttribute('src') !== item.thumbnail) el.heroImg.src = item.thumbnail;
+    if (!showPreview) el.preview.pause();
+
+    // Media-only mode shows no author; the card preview shows its own author and text.
+    el.text.classList.toggle('hidden', !tweet.text || kind !== 'media');
     if (kind === 'card') renderCardPreview();
+    refreshOutput();
+  }
+
+  // Original plus the twimg size presets that are actually smaller than the photo.
+  function photoSizes(item) {
+    const long = Math.max(item.width || 0, item.height || 0);
+    const dims = (limit) => {
+      const f = Math.min(1, limit / long);
+      return Math.round(item.width * f) + '×' + Math.round(item.height * f);
+    };
+    const original = { id: 'orig', label: 'Original' + (long ? ' · ' + item.width + '×' + item.height : '') };
+    if (!long) return [original];
+    return [original, ...PHOTO_PRESETS.filter(([, , limit]) => long > limit).map(([id, name, limit]) => ({ id, label: name + ' · ' + dims(limit) }))];
   }
 
   // Rebuilds everything that depends on which media item is selected.
@@ -203,12 +293,17 @@
     selected = index;
     const item = currentItem();
     el.strip.querySelectorAll('.tw-thumb').forEach((btn, i) => btn.classList.toggle('is-selected', i === index));
+    document.querySelectorAll('#tw-panel .mg-cell[data-index]').forEach((cell) => cell.classList.toggle('is-selected', Number(cell.dataset.index) === index));
 
+    if (item && item.type === 'photo') {
+      fillSelect(el.photoSize, photoSizes(item).map((o) => o.id), (id) => photoSizes(item).find((o) => o.id === id).label);
+    }
     if (isVideo(item)) {
+      // Heights X serves directly come first-class; the rest are downscaled by ffmpeg ("scaled").
       fillSelect(el.quality, (item.qualities || []).map((q) => q.height), (h) => {
         const q = item.qualities.find((x) => x.height === h);
         const size = formatBytes(q.estimated_bytes);
-        return h + 'p' + (size ? ' · ' + size : '');
+        return h + 'p' + (size ? ' · ' + (q.native === false ? '~' : '') + size : '') + (q.native === false ? ' · scaled' : '');
       });
       if (!el.quality.options.length) fillSelect(el.quality, [''], () => 'best available');
 
@@ -218,7 +313,6 @@
       const duration = item.duration || 0;
       el.end.max = el.start.max = duration || 1;
       el.trim.classList.toggle('hidden', !duration);
-      el.preview.classList.toggle('hidden', !item.previewUrl);
       el.preview.poster = item.thumbnail || '';
       if (item.previewUrl) el.preview.src = item.previewUrl; else el.preview.removeAttribute('src');
       trim = { start: 0, end: duration };
@@ -250,13 +344,7 @@
   }
 
   function populate() {
-    const { author, text } = tweet;
-    el.avatar.src = author.avatarUrl || '';
-    el.avatar.classList.toggle('hidden', !author.avatarUrl);
-    el.name.textContent = author.name;
-    el.verified.classList.toggle('hidden', !author.verified);
-    el.handle.textContent = '@' + author.handle;
-    el.text.textContent = text;
+    el.text.textContent = tweet.text;
     el.title.value = '';
 
     fillSelect(el.fps, FPS_OPTIONS, (v) => v + ' fps', 15);
@@ -274,6 +362,12 @@
     kind = tab.dataset.kind;
     savePrefs();
     render();
+  });
+
+  el.cardScale.addEventListener('change', () => {
+    card.scale = Number(el.cardScale.value);
+    savePrefs();
+    renderCardPreview();
   });
 
   el.cardTheme.addEventListener('click', (e) => {
@@ -320,6 +414,8 @@
 
   panels.twitter = {
     el: $('tw-panel'),
+    extEl: el.ext,
+    output,
     accepts: (url) => TWEET_URL_RE.test(url),
     hint: 'Open a tweet (x.com/…/status/…) to use this tab.',
     loadingText: 'Loading tweet…',
@@ -329,7 +425,10 @@
     ]).then(([stored, info]) => {
       kind = stored.twKind === 'card' ? 'card' : 'media';
       card = Object.assign(card, stored.twCard);
-      tweet = info;
+      // An older native host sends no quote data and doesn't tag which post a media item belongs to.
+      noteOutdatedHost('twitter', !('quoted' in info));
+      (info.media || []).forEach((m) => { m.from = m.from || 'own'; });
+      tweet = Object.assign({ media: [], quoted: null }, info);
       noteYtdlp(info.ytdlp);
       populate();
     }),
@@ -347,6 +446,7 @@
           format: fmt,
           mediaIndex: selected,
           quality,
+          photoSize: el.photoSize.value || 'orig',
           gif: {
             fps: Number(el.fps.value),
             speed: Number(el.speed.value),
@@ -354,7 +454,7 @@
             start: trim.start,
             end: trim.end || null,
           },
-          card: Object.assign({}, card),
+          card: Object.assign({}, card, { scale: cardScale() }),
         },
       };
     },
