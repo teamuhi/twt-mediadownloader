@@ -494,6 +494,7 @@ def validate_twitter_request(url, options):
                  'showDate': card.get('showDate', True) is not False,
                  'showVerified': card.get('showVerified', True) is not False,
                  'showQuote': card.get('showQuote', True) is not False,
+                 'photoLayout': card.get('photoLayout') if card.get('photoLayout') in render.PHOTO_LAYOUTS else 'grid',
                  'scale': int(_num(card.get('scale'), 2, 1, 3))},
     }
 
