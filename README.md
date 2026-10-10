@@ -1,9 +1,9 @@
-# nickel.tools [![img](browser-extension/extension/icons/icon-32.png)]
+# nickel.tools <img src="browser-extension/extension/icons/icon-32.png">
 Based on the fork by [leoconnn](https://github.com/leconnn/youtube-dl-extension) which is forked from [youtube-dl](https://github.com/ytdl-org/youtube-dl), heavy references to the web tool [cobalt.tools](https://cobalt.meowing.de/). This fork is for my personal use only, I do not claim anything in these repositories.
 
 <p align="center"><img src="browser-extension/extension/icons/icon-128.png" alt="icon" width="128"></p>
 
-## Image previews
+## Image previews <img src="browser-extension/extension/icons/icon-32.png">
 
 <table>
 <tr>
@@ -18,7 +18,7 @@ Based on the fork by [leoconnn](https://github.com/leconnn/youtube-dl-extension)
 </tr>
 </table>
 
-## Key features 
+## Key features <img src="browser-extension/extension/icons/icon-32.png">
 
 - **YouTube video download**: pick the resolution (with the estimated file
   size shown before you download), the video codec (H.264, VP9 or AV1), and
@@ -48,7 +48,7 @@ Based on the fork by [leoconnn](https://github.com/leconnn/youtube-dl-extension)
   > permission to save, and respect copyright and each site's Terms of
   > Service. You are responsible for how you use this tool.
 
-## How to Install
+## How to Install <img src="browser-extension/extension/icons/icon-32.png">
 
 Windows only. One installer covers every supported browser you have: it
 detects Firefox, Chrome, Edge and Brave and only sets up the ones it finds.
@@ -72,7 +72,7 @@ puzzle-piece menu; pin it to keep it visible).
 
 To remove everything, uninstall **nickel.tools** from Windows Settings.
 
-## How to Update
+## How to Update <img src="browser-extension/extension/icons/icon-32.png">
 
 Updating is the same as installing: you run the newer installer over the old
 one. Your settings and download history are kept, and there's no need to
@@ -102,7 +102,7 @@ updates the extension on its own, since it isn't on the Add-ons store.
 **[See `browser-extension/README.md` for the actual project](browser-extension/README.md):**
 what it does, how to install it, and how it works.
 
-## Recent changes
+## Recent changes <img src="browser-extension/extension/icons/icon-32.png">
 
 - Export state outside the popup: while a download runs, the toolbar icon
   shows a progress badge (`42%`, the count when several run, then a check or
@@ -129,7 +129,7 @@ what it does, how to install it, and how it works.
   iframes and shadow DOM, and HLS/DASH streams. If yt-dlp can't handle a
   page (not only "unsupported URL"), the popup falls back to the Web tab.
 
-## Layout
+## Layout <img src="browser-extension/extension/icons/icon-32.png">
 
 - `browser-extension/`: the actual project. Start with its README.
   - `backend/core.py`: the shared extraction/download logic, a thin layer
@@ -149,7 +149,7 @@ that history (its own CLI, docs, packaging, and test suite) has been
 removed since none of it applies here, this is a browser extension project
 that depends on yt-dlp as a library, not a fork of a CLI tool.
 
-## License
+## License <img src="browser-extension/extension/icons/icon-32.png">
 
 Unlicense (public domain), see `LICENSE`. This covers this repository's own
 code; yt-dlp is a separate dependency (also Unlicense) installed via pip,
