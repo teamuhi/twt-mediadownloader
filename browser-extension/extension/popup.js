@@ -541,14 +541,16 @@ function init() {
   const stored = browser.storage.local.get(['theme', 'defaultTab']);
   stored.then((s) => applyThemePref(s.theme || 'system'));
 
-  Promise.all([stored, currentTab()]).then(([s, tab]) => {
+  Promise.all([stored, currentTab()]).then(async ([s, tab]) => {
     const url = tab.url;
     currentTabUrlValue = url;
     currentTabId = tab.id;
-    send({ type: 'getJob', tabUrl: url }).then((job) => {
-      if (job) lastJob = job;
-      selectTab(startTab(url, s.defaultTab));
-    });
+    // A missing/stale background must not leave the popup stuck on "Loading…".
+    const job = await send({ type: 'getJob', tabUrl: url }).catch(() => null);
+    if (job) lastJob = job;
+    selectTab(startTab(url, s.defaultTab));
+  }).catch((err) => {
+    panelError('youtube', { message: 'Could not start: ' + err.message, hint: 'Reload the extension or restart the browser.' });
   });
 }
 

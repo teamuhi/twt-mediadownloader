@@ -85,7 +85,11 @@ body.is-detached #popout-btn {
   display: none;
 }
 
+/* Firefox sizes the toolbar popup from its first layout. Until init finishes the
+   panels are all empty/hidden (header only), so without a floor the popup opens
+   tiny and has to grow after async work, which is unreliable. */
 #app {
+  min-height: 240px;
   max-height: 600px;
   overflow-y: auto;
   scrollbar-gutter: stable;

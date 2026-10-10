@@ -1,10 +1,16 @@
 # nickel.tools
 based on the fork by [leoconnn](https://github.com/leconnn/youtube-dl-extension) which is forked from [youtube-dl](https://github.com/ytdl-org/youtube-dl), heavy references to the web tool [cobalt.tools](https://cobalt.meowing.de/). This is fork is for my personal use only I do not claim anything in these repositories.
 
-[[img](browser-extension/extension/icons/icon-128.png)]
+![icon](browser-extension/extension/icons/icon-128.png)
 
 **[See `browser-extension/README.md` for the actual project](browser-extension/README.md):**
 what it does, how to install it, and how it works.
+
+## Image previews
+
+| YouTube | Twitter | Web |
+|:---:|:---:|:---:|
+| <img src="browser-extension/extension/asset_images/yt-video.PNG" width="250"><br><img src="browser-extension/extension/asset_images/yt-audio.PNG" width="250"> | <img src="browser-extension/extension/asset_images/twt-media.PNG" width="250"><br><img src="browser-extension/extension/asset_images/twt-card.PNG" width="250"><br><img src="browser-extension/extension/asset_images/twt-card_preview.PNG" width="250"> | <img src="browser-extension/extension/asset_images/web-media.PNG" width="250"> |
 
 ## Layout
 

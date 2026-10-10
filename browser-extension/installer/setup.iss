@@ -27,7 +27,7 @@
 ; silently not taking effect until some later, easy-to-miss restart.
 
 #define MyAppName "nickel.tools"
-#define MyAppVersion "0.8.0"
+#define MyAppVersion "0.8.1"
 #define MyAppPublisher "nickel.tools"
 #define MyAppURL "https://github.com/teamuhi/nickel-tools"
 #define NativeHostName "com.nickel.nickel_tools"

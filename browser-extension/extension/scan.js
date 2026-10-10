@@ -29,7 +29,11 @@
   // Identifies one picture across its renditions (?w=300 / _1280x1280.jpg).
   function variantKey(url) {
     const u = new URL(url);
-    [...u.searchParams.keys()].forEach((k) => { if (SIZE_PARAMS.test(k)) u.searchParams.delete(k); });
+    // forEach, not [...keys()]: Firefox's content-script sandbox hands back URLSearchParams
+    // iterators that aren't iterable ("u.searchParams.keys() is not iterable").
+    const keys = [];
+    u.searchParams.forEach((value, key) => keys.push(key));
+    keys.forEach((k) => { if (SIZE_PARAMS.test(k)) u.searchParams.delete(k); });
     u.hash = '';
     u.pathname = u.pathname.replace(SIZE_SUFFIX, '');
     return u.href;
@@ -85,7 +89,7 @@
 
   // querySelectorAll that also pierces open shadow roots (web components).
   function all(selector, root = document) {
-    const found = [...root.querySelectorAll(selector)];
+    const found = Array.prototype.slice.call(root.querySelectorAll(selector));
     root.querySelectorAll('*').forEach((host) => {
       if (host.shadowRoot) found.push(...all(selector, host.shadowRoot));
     });
