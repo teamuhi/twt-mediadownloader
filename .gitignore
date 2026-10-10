@@ -66,3 +66,5 @@ browser-extension/extension-chromium/dev-key/
 # durable outside git; losing it means a new extension ID, leaking it lets
 # someone forge "updates" to anyone with the force-install policy applied.
 browser-extension/installer/signing/
+
+# AI agent handoff files (local only)
