@@ -61,7 +61,7 @@ log = logging.getLogger('host')
 
 # Reported to the popup's Maintenance section; also tells it which features
 # (folder browser, container choice) this host build understands.
-HOST_VERSION = '0.8.0'
+HOST_VERSION = '0.9.0'
 
 # Chromium's MV3 service worker can be killed and restarted mid-download by
 # the browser at any time, and reconnecting always spawns a NEW host.exe
