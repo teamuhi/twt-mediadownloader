@@ -215,7 +215,7 @@ The card's **Translate** row picks a language (Off by default). The tweet text,
 and the quoted post's text, are machine-translated into it (the source language
 is detected automatically) and the card shows a "Translated from Russian"
 line above each translated text, like X does. Text already in the chosen
-language is left alone. Translation sends the tweet text to Google Translate's
+language is left alone. @handles are never translated. Translation sends the tweet text to Google Translate's
 public web endpoint through the native host, and needs an internet connection;
 if it fails the card keeps the original text. Translation needs the updated
 native host (reinstall after updating).
