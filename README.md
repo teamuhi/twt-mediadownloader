@@ -8,9 +8,29 @@ what it does, how to install it, and how it works.
 
 ## Image previews
 
-| YouTube | Twitter | Web |
-|:---:|:---:|:---:|
-| <img src="browser-extension/extension/asset_images/yt-video.PNG" width="250"><br><img src="browser-extension/extension/asset_images/yt-audio.PNG" width="250"> | <img src="browser-extension/extension/asset_images/twt-media.PNG" width="250"><br><img src="browser-extension/extension/asset_images/twt-card.PNG" width="250"><br><img src="browser-extension/extension/asset_images/twt-card_preview.PNG" width="250"> | <img src="browser-extension/extension/asset_images/web-media.PNG" width="250"> |
+### YouTube
+<table>
+<tr>
+<td align="top-center"><img src="browser-extension/extension/asset_images/yt-video.PNG" width="220"><br><sub>Video</sub></td>
+<td align="top-center"><img src="browser-extension/extension/asset_images/yt-audio.PNG" width="220"><br><sub>Audio</sub></td>
+</tr>
+</table>
+
+### Twitter
+<table>
+<tr>
+<td align="center"><img src="browser-extension/extension/asset_images/twt-media.PNG" width="220"><br><sub>Media only</sub></td>
+<td align="center"><img src="browser-extension/extension/asset_images/twt-card.PNG" width="220"><br><sub>Tweet card</sub></td>
+<td align="center"><img src="browser-extension/extension/asset_images/twt-card_preview.PNG" width="220"><br><sub>Tweet card preview</sub></td>
+</tr>
+</table>
+
+### Web
+<table>
+<tr>
+<td align="center"><img src="browser-extension/extension/asset_images/web-media.PNG" width="220"><br><sub>Media</sub></td>
+</tr>
+</table>
 
 ## Layout
 
