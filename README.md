@@ -1,53 +1,22 @@
-# nickel.tools
+# nickel.tools [![img](browser-extension/extension/icons/icon-32.png)]
 Based on the fork by [leoconnn](https://github.com/leconnn/youtube-dl-extension) which is forked from [youtube-dl](https://github.com/ytdl-org/youtube-dl), heavy references to the web tool [cobalt.tools](https://cobalt.meowing.de/). This fork is for my personal use only, I do not claim anything in these repositories.
 
 <p align="center"><img src="browser-extension/extension/icons/icon-128.png" alt="icon" width="128"></p>
 
 ## Image previews
 
-### YouTube
 <table>
 <tr>
-<td align="top-center"><img src="browser-extension/extension/asset_images/yt-video.PNG" width="220"><br><sub>Video</sub></td>
-<td align="top-center"><img src="browser-extension/extension/asset_images/yt-audio.PNG" width="220"><br><sub>Audio</sub></td>
+<td align="center" valign="top"><img src="browser-extension/extension/asset_images/yt-video.PNG" width="250"><br><sub><b>YouTube · Video</b></sub></td>
+<td align="center" valign="top"><img src="browser-extension/extension/asset_images/yt-audio.PNG" width="250"><br><sub><b>YouTube · Audio</b></sub></td>
+<td align="center" valign="top"><img src="browser-extension/extension/asset_images/web-media.PNG" width="250"><br><sub><b>Web · Media</b></sub></td>
 </tr>
-</table>
-
-### Twitter
-<table>
 <tr>
-<td align="center"><img src="browser-extension/extension/asset_images/twt-media.PNG" width="220"><br><sub>Media only</sub></td>
-<td align="center"><img src="browser-extension/extension/asset_images/twt-card.PNG" width="220"><br><sub>Tweet card</sub></td>
-<td align="center"><img src="browser-extension/extension/asset_images/twt-card_preview.PNG" width="220"><br><sub>Tweet card preview</sub></td>
+<td align="center" valign="top"><img src="browser-extension/extension/asset_images/twt-media.PNG" width="250"><br><sub><b>X / Twitter · Media only</b></sub></td>
+<td align="center" valign="top"><img src="browser-extension/extension/asset_images/twt-card.PNG" width="250"><br><sub><b>X / Twitter · Tweet card</b></sub></td>
+<td align="center" valign="top"><img src="browser-extension/extension/asset_images/twt-card_preview.PNG" width="250"><br><sub><b>X / Twitter · Card preview</b></sub></td>
 </tr>
 </table>
-
-### Web
-<table>
-<tr>
-<td align="center"><img src="browser-extension/extension/asset_images/web-media.PNG" width="220"><br><sub>Media</sub></td>
-</tr>
-</table>
-
-## Layout
-
-- `browser-extension/`: the actual project. Start with its README.
-  - `backend/core.py`: the shared extraction/download logic, a thin layer
-    over yt-dlp (installed as a normal pip dependency, not vendored here).
-  - `native-host/`: the native messaging host every browser's extension
-    talks to (same program for all of them), and the PyInstaller build that
-    bundles it with yt-dlp and ffmpeg into a standalone Windows program.
-  - `extension/`: the Firefox WebExtension (Manifest V2).
-  - `extension-chromium/`: the Chrome/Edge/Brave-specific parts of the
-    extension (Manifest V3); shares most of its UI code with `extension/`
-    at build time rather than duplicating it.
-  - `installer/`: the Windows installer (Inno Setup) that ties all of the
-    above together into one `.exe`, for every browser it finds installed.
-
-This repo used to be a full fork of the original youtube-dl CLI project;
-that history (its own CLI, docs, packaging, and test suite) has been
-removed since none of it applies here, this is a browser extension project
-that depends on yt-dlp as a library, not a fork of a CLI tool.
 
 ## Key features 
 
@@ -159,6 +128,26 @@ what it does, how to install it, and how it works.
   lazy-loaded images (`data-src` etc.), CSS background images, media inside
   iframes and shadow DOM, and HLS/DASH streams. If yt-dlp can't handle a
   page (not only "unsupported URL"), the popup falls back to the Web tab.
+
+## Layout
+
+- `browser-extension/`: the actual project. Start with its README.
+  - `backend/core.py`: the shared extraction/download logic, a thin layer
+    over yt-dlp (installed as a normal pip dependency, not vendored here).
+  - `native-host/`: the native messaging host every browser's extension
+    talks to (same program for all of them), and the PyInstaller build that
+    bundles it with yt-dlp and ffmpeg into a standalone Windows program.
+  - `extension/`: the Firefox WebExtension (Manifest V2).
+  - `extension-chromium/`: the Chrome/Edge/Brave-specific parts of the
+    extension (Manifest V3); shares most of its UI code with `extension/`
+    at build time rather than duplicating it.
+  - `installer/`: the Windows installer (Inno Setup) that ties all of the
+    above together into one `.exe`, for every browser it finds installed.
+
+This repo used to be a full fork of the original youtube-dl CLI project;
+that history (its own CLI, docs, packaging, and test suite) has been
+removed since none of it applies here, this is a browser extension project
+that depends on yt-dlp as a library, not a fork of a CLI tool.
 
 ## License
 
