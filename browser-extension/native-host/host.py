@@ -47,6 +47,7 @@ if not getattr(sys, 'frozen', False):
 
 import core  # noqa: E402
 import errors  # noqa: E402
+import translate  # noqa: E402
 import web  # noqa: E402
 
 LOG_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'nickel-tools')
@@ -176,6 +177,15 @@ def handle_tweet(msg):
         send_message(dict(info, type='tweetResult', requestId=request_id, ok=True))
     except Exception as e:
         send_message(dict(errors.classify_error(e, 'twitter'), type='tweetResult', requestId=request_id, ok=False))
+
+
+def handle_translate(msg):
+    request_id = msg.get('requestId')
+    try:
+        results = translate.translate_all(msg.get('texts') or [], msg.get('target') or 'en')
+        send_message({'type': 'translateResult', 'requestId': request_id, 'ok': True, 'results': results})
+    except Exception as e:
+        send_message(dict(errors.classify_error(e, 'twitter'), type='translateResult', requestId=request_id, ok=False))
 
 
 def handle_download(msg):
@@ -413,6 +423,8 @@ def main():
                 threading.Thread(target=handle_browse_folder, args=(msg,), daemon=True).start()
             elif msg_type == 'tweet':
                 threading.Thread(target=handle_tweet, args=(msg,), daemon=True).start()
+            elif msg_type == 'translate':
+                threading.Thread(target=handle_translate, args=(msg,), daemon=True).start()
             elif msg_type == 'formats':
                 threading.Thread(target=handle_formats, args=(msg,), daemon=True).start()
             elif msg_type == 'download':

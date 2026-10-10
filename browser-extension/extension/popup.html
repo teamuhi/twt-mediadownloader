@@ -288,6 +288,7 @@
                 <div class="card-handle" id="card-handle"></div>
               </div>
             </div>
+            <div id="card-tr" class="card-tr hidden"></div>
             <p id="card-text" class="card-text"></p>
             <div id="card-own" class="media-grid hidden"></div>
             <div id="card-quote" class="card-quote q-box hidden"></div>
@@ -363,6 +364,13 @@
                   <button type="button" role="tab" data-theme="light" aria-selected="true">Light</button>
                   <button type="button" role="tab" data-theme="dark" aria-selected="false">Dark</button>
                 </div>
+              </div>
+              <div class="row">
+                <span class="row-label">Translate</span>
+                <select id="tw-translate" aria-label="Translate tweet text to"></select>
+              </div>
+              <div class="row hidden" id="tw-translate-status-row">
+                <span class="hint" id="tw-translate-status" role="status"></span>
               </div>
               <div class="row hidden" id="tw-photo-layout-row">
                 <span class="row-label">Photo layout</span>
@@ -473,6 +481,7 @@
         <span class="q-date card-handle"></span>
       </div>
     </div>
+    <div class="q-tr card-tr hidden"></div>
     <p class="q-text card-text"></p>
     <div class="q-media media-grid hidden"></div>
   </template>

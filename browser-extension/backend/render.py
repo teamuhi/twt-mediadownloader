@@ -121,6 +121,7 @@ RADIUS = 16
 BORDER = 1
 LINE_H = 24
 GAP = 12
+TR_LABEL_H = 20  # "Translated from …" line above translated text
 MAX_TALL = 1.25
 MERGED_MAX_TALL = 3
 MERGED_MAX_SIDE = 3600
@@ -334,6 +335,11 @@ def _draw_media(img, rect, spec, radius, theme_name, S=SCALE):
     return False
 
 
+def _draw_translated_label(draw, x, top, label, theme, S):
+    """The muted "Translated from Russian" line X shows above a translated post."""
+    _draw_text(draw, x, _baseline(top, TR_LABEL_H * S, 'regular', 13 * S), label, 'regular', 13 * S, theme['muted'])
+
+
 def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path=None):
     """Draws the card. `own` / `quote` are media specs for the tweet itself and
     its quoted tweet: {'images': [PIL images]} for static media, or
@@ -349,14 +355,19 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
     show_text = opts.get('showText', True)
     quoted = tweet.get('quoted') if opts.get('showQuote', True) else None
 
-    text_lines = _wrap(tweet['text'], W - 2 * pad, 'regular', 17 * S) if show_text and tweet.get('text') else []
+    translation = opts.get('translation') or {}
+    own_tr = translation.get('own') if show_text else None
+    text_lines = _wrap(own_tr['text'] if own_tr else tweet['text'], W - 2 * pad, 'regular', 17 * S) if show_text and tweet.get('text') else []
     date = _format_date(tweet.get('createdAt')) if opts.get('showDate', True) else ''
 
     # ---- layout (everything in physical px, top to bottom)
     y = pad + AVATAR * S
-    text_y = date_y = 0
+    text_y = date_y = label_y = 0
     if text_lines:
         text_y = y + GAP * S
+        if own_tr:
+            label_y = text_y
+            text_y += TR_LABEL_H * S
         y = text_y + len(text_lines) * LINE_H * S
     own_rect = None
     if own:
@@ -370,11 +381,15 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
         inner_w = MEDIA_W * S - 2 * QPAD * S
         box_y = y + GAP * S
         cy = box_y + QPAD * S
-        q = {'box': (pad, box_y), 'head_y': cy, 'inner_x': inner_x, 'inner_w': inner_w, 'lines': [], 'text_y': 0, 'media': None}
+        q = {'box': (pad, box_y), 'head_y': cy, 'inner_x': inner_x, 'inner_w': inner_w, 'lines': [], 'text_y': 0, 'label_y': 0, 'media': None}
+        quote_tr = translation.get('quote') if show_text else None
         cy += 20 * S
         if show_text and quoted.get('text'):
-            q['lines'] = _wrap(quoted['text'], inner_w, 'regular', 15 * S)
+            q['lines'] = _wrap(quote_tr['text'] if quote_tr else quoted['text'], inner_w, 'regular', 15 * S)
             q['text_y'] = cy + 4 * S
+            if quote_tr:
+                q['label_y'] = q['text_y']
+                q['text_y'] += TR_LABEL_H * S
             cy = q['text_y'] + len(q['lines']) * 20 * S
         if quote:
             q['media'] = (inner_x, cy + 8 * S, inner_w, _media_height(inner_w, quote))
@@ -394,6 +409,8 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
     name_x = pad + (AVATAR + 12) * S
     _draw_name_row(img, name_x, pad, author, 15 * S, theme, show_verified, W - pad - name_x, 18 * S, False, S)
     draw = ImageDraw.Draw(img)
+    if own_tr and text_lines:
+        _draw_translated_label(draw, pad, label_y, own_tr['label'], theme, S)
     for i, line in enumerate(text_lines):
         _draw_text(draw, pad, _baseline(text_y + i * LINE_H * S, LINE_H * S, 'regular', 17 * S), line, 'regular', 17 * S, theme['text'])
 
@@ -414,6 +431,8 @@ def build_card(tweet, opts, avatar_path, own=None, quote=None, quote_avatar_path
         _draw_name_row(img, text_x, q['head_y'], quoted['author'], 15 * S, theme, show_verified, q['inner_x'] + q['inner_w'] - text_x, 16 * S, True, S,
                        ' · ' + qdate if qdate else '')
         draw = ImageDraw.Draw(img)
+        if quote_tr and q['lines']:
+            _draw_translated_label(draw, q['inner_x'], q['label_y'], quote_tr['label'], theme, S)
         for i, line in enumerate(q['lines']):
             _draw_text(draw, q['inner_x'], _baseline(q['text_y'] + i * 20 * S, 20 * S, 'regular', 15 * S), line, 'regular', 15 * S, theme['text'])
         if q['media'] and _draw_media(img, q['media'], quote, QMEDIA_RADIUS * S, theme_name, S):

@@ -211,6 +211,15 @@ as a still. A plain *repost* has no link of its own (copying its link gives
 the original post's URL), so a copied repost link produces the card of the
 original post.
 
+The card's **Translate** row picks a language (Off by default). The tweet text,
+and the quoted post's text, are machine-translated into it (the source language
+is detected automatically) and the card shows a "Translated from Russian"
+line above each translated text, like X does. Text already in the chosen
+language is left alone. Translation sends the tweet text to Google Translate's
+public web endpoint through the native host, and needs an internet connection;
+if it fails the card keeps the original text. Translation needs the updated
+native host (reinstall after updating).
+
 Sensitive or protected tweets need a logged-in account. With **Use my x.com
 login** on (settings, on by default) the extension reads your browser's
 x.com cookies and hands them to the local program for that one request,

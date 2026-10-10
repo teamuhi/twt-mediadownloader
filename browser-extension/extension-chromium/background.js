@@ -19,6 +19,7 @@
 
 const HOST_NAME = 'com.nickel.nickel_tools';
 const HOST_TIMEOUT_MS = 8000;
+const TRANSLATE_TIMEOUT_MS = 30000; // two sequential web requests; also covers an old host that ignores the message
 
 let port = null;
 
@@ -343,7 +344,7 @@ function broadcast(tabUrl) {
 }
 
 function onPortMessage(msg) {
-  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'tweetResult' || msg.type === 'configResult' || msg.type === 'jobStatusResult' || msg.type === 'browseFolderResult' || msg.type === 'openPathResult' || msg.type === 'revealFileResult') {
+  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'tweetResult' || msg.type === 'translateResult' || msg.type === 'configResult' || msg.type === 'jobStatusResult' || msg.type === 'browseFolderResult' || msg.type === 'openPathResult' || msg.type === 'revealFileResult') {
     const pending = pendingRequests[msg.requestId];
     if (!pending) return;
     delete pendingRequests[msg.requestId];
@@ -449,6 +450,12 @@ function mergeScans(results) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'getFormats') {
     stateLoaded.then(() => sendRequest({ type: 'formats', requestId: newRequestId(), url: message.url }))
+      .then(sendResponse, (err) => sendResponse(failure(err)));
+    return true;
+  }
+
+  if (message.type === 'translate') {
+    stateLoaded.then(() => sendRequest({ type: 'translate', requestId: newRequestId(), texts: message.texts, target: message.target }, TRANSLATE_TIMEOUT_MS))
       .then(sendResponse, (err) => sendResponse(failure(err)));
     return true;
   }

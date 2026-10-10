@@ -529,6 +529,17 @@ def _num(value, default, lo, hi):
         return default
 
 
+def _translation(raw):
+    """{'own': {...}, 'quote': {...}} of {'text', 'label'} from the popup's
+    translate step; anything malformed is dropped (the card keeps the original)."""
+    out = {}
+    for key in ('own', 'quote'):
+        part = (raw or {}).get(key)
+        if isinstance(part, dict) and isinstance(part.get('text'), str) and isinstance(part.get('label'), str):
+            out[key] = {'text': part['text'], 'label': part['label'][:80]}
+    return out
+
+
 def validate_twitter_request(url, options):
     """Returns normalized options; raises ValueError (user-facing message)."""
     twitter.parse_tweet_id(url)
@@ -560,7 +571,8 @@ def validate_twitter_request(url, options):
                  'showVerified': card.get('showVerified', True) is not False,
                  'showQuote': card.get('showQuote', True) is not False,
                  'photoLayout': card.get('photoLayout') if card.get('photoLayout') in render.PHOTO_LAYOUTS else 'grid',
-                 'scale': int(_num(card.get('scale'), 2, 1, 3))},
+                 'scale': int(_num(card.get('scale'), 2, 1, 3)),
+                 'translation': _translation(card.get('translation'))},
     }
 
 

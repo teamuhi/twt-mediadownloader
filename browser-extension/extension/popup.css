@@ -1355,6 +1355,17 @@ video.hero-media {
   margin-top: var(--s2);
 }
 
+/* "Translated from Russian" above a translated post */
+.card-tr {
+  margin-top: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--c-muted);
+}
+
+.card-tr + .card-text {
+  margin-top: 2px;
+}
+
 /* Quote box inside the card preview (themed by the card's --c-* vars). */
 
 .q-box {

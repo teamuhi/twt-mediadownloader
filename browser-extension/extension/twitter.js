@@ -11,6 +11,7 @@
   const GIF_BYTES_PER_PIXEL_FRAME = 0.12; // rough palette+LZW average, for the size hint
   const CARD_BASE_W = 598; // px at 1x, matches backend render.CARD_W
   const CARD_SCALES = [1, 2, 3];
+  const TRANSLATE_LANGS = ['en', 'es', 'fr', 'de', 'pt', 'it', 'nl', 'sv', 'pl', 'uk', 'ru', 'tr', 'ar', 'hi', 'id', 'vi', 'th', 'ja', 'ko', 'zh-CN', 'zh-TW'];
   const PHOTO_PRESETS = [['large', 'Large', 2048], ['medium', 'Medium', 1200], ['small', 'Small', 680]]; // twimg ?name= sizes
 
   const el = {
@@ -22,6 +23,7 @@
     start: $('tw-start'), end: $('tw-end'), startT: $('tw-start-t'), endT: $('tw-end-t'),
     photoOpts: $('tw-photo-opts'), photoSize: $('tw-photo-size'), cardScale: $('tw-card-scale'),
     cardTheme: $('tw-card-theme'), photoLayout: $('tw-photo-layout'), photoLayoutRow: $('tw-photo-layout-row'), showText: $('tw-show-text'), showDate: $('tw-show-date'), showVerified: $('tw-show-verified'),
+    translate: $('tw-translate'), translateStatus: $('tw-translate-status'), translateStatusRow: $('tw-translate-status-row'), cardTr: $('card-tr'),
     showQuote: $('tw-show-quote'), showQuoteLabel: $('tw-show-quote-label'),
     quote: $('card-quote'), cardOwn: $('card-own'),
     card: $('tw-card'), cardAvatar: $('card-avatar'), cardName: $('card-name'), cardVerified: $('card-verified'),
@@ -34,7 +36,10 @@
   let tweet = null;
   let selected = 0;
   let kind = 'media';
-  let card = { theme: 'light', showText: true, showDate: true, showVerified: true, showQuote: true, scale: 2, photoLayout: 'grid' };
+  let card = { theme: 'light', showText: true, showDate: true, showVerified: true, showQuote: true, translate: '', scale: 2, photoLayout: 'grid' };
+  let translation = null; // { target, own, quote } of { text, label } | null, for card.translate
+  let translating = 0; // sequence number of the in-flight translate request, 0 when idle
+  let translateSeq = 0;
   let trim = { start: 0, end: 0 };
 
   const currentItem = () => (tweet && tweet.media[selected]) || null;
@@ -132,6 +137,79 @@
     return withTime ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · ' + day : day;
   }
 
+  const langNames = new Intl.DisplayNames(['en'], { type: 'language' });
+  function langName(code) {
+    try { return langNames.of(code) || code; } catch (e) { return code; }
+  }
+
+  // Translation to show for the current target, or null (off, pending, or already in that language).
+  const activeTranslation = () => (card.translate && translation && translation.target === card.translate ? translation : null);
+
+  function setTranslateStatus(text) {
+    el.translateStatus.textContent = text;
+    el.translateStatusRow.classList.toggle('hidden', !text);
+  }
+
+  // One result of the translate request -> what the card shows, or null when nothing changed.
+  function translatedPart(result, original, target) {
+    if (!result || !original || result.text === original || result.from.split('-')[0] === target.split('-')[0]) return null;
+    return { text: result.text, label: 'Translated from ' + langName(result.from) };
+  }
+
+  function translationNote(target) {
+    return translation.own || translation.quote ? '' : 'Already in ' + langName(target) + '.';
+  }
+
+  function loadTranslation() {
+    const target = card.translate;
+    if (!target || !tweet) {
+      translation = null;
+      translating = 0;
+      translateSeq++;
+      setTranslateStatus('');
+      if (tweet) renderCardPreview();
+      syncActions();
+      return;
+    }
+    if (translation && translation.target === target) {
+      setTranslateStatus(translationNote(target));
+      renderCardPreview();
+      return;
+    }
+    const seq = ++translateSeq;
+    translating = seq;
+    setTranslateStatus('Translating…');
+    renderCardPreview();
+    syncActions();
+    const quoteText = tweet.quoted && tweet.quoted.text;
+    send({ type: 'translate', texts: [tweet.text, quoteText], target })
+      .then((res) => {
+        if (seq !== translateSeq) return;
+        const [own, quote] = res.results;
+        translation = { target, own: translatedPart(own, tweet.text, target), quote: translatedPart(quote, quoteText, target) };
+        setTranslateStatus(translationNote(target));
+      })
+      .catch((err) => {
+        if (seq !== translateSeq) return;
+        card.translate = '';
+        translation = null;
+        savePrefs();
+        setTranslateStatus("Couldn't translate: " + err.message + (err.hint ? ' ' + err.hint : ''));
+      })
+      .finally(() => {
+        if (seq !== translateSeq) return;
+        translating = 0;
+        renderCardPreview();
+        syncActions();
+      });
+  }
+
+  function fillTranslateOptions() {
+    const codes = !card.translate || TRANSLATE_LANGS.includes(card.translate) ? TRANSLATE_LANGS : [...TRANSLATE_LANGS, card.translate];
+    el.translate.replaceChildren(new Option('Off', ''), ...codes.map((code) => new Option(langName(code), code)));
+    el.translate.value = card.translate || '';
+  }
+
   // Thumbnails laid out like the rendered card (1, 2, 3 or 4 images). `layout` 'row' / 'column'
   // joins 2+ photos uncropped into one strip instead of the cropped grid.
   function fillGrid(grid, items, layout) {
@@ -167,7 +245,7 @@
   }
 
   // Fills a quote box built from #quote-tpl with the quoted post.
-  function renderQuote(box, quoted, items, opts) {
+  function renderQuote(box, quoted, items, opts, tr) {
     const q = (cls) => box.querySelector('.' + cls);
     const avatar = q('q-avatar');
     avatar.src = quoted.author.avatarUrl || '';
@@ -178,8 +256,11 @@
     const date = opts.showDate ? formatDate(quoted.createdAt) : '';
     q('q-date').textContent = date ? '· ' + date : '';
     const text = q('q-text');
-    text.textContent = quoted.text;
+    text.textContent = tr ? tr.text : quoted.text;
     text.classList.toggle('hidden', !(opts.showText && quoted.text));
+    const label = q('q-tr');
+    label.textContent = tr ? tr.label : '';
+    label.classList.toggle('hidden', !(tr && opts.showText && quoted.text));
     fillGrid(q('q-media'), items, opts.photoLayout);
   }
 
@@ -203,15 +284,21 @@
     el.cardName.textContent = author.name;
     el.cardHandle.textContent = '@' + author.handle;
     el.cardVerified.classList.toggle('hidden', !(author.verified && card.showVerified));
-    el.cardText.textContent = text;
+    const tr = activeTranslation();
+    const ownTr = tr && tr.own;
+    el.cardText.textContent = ownTr ? ownTr.text : text;
     el.cardText.classList.toggle('hidden', !(card.showText && text));
+    el.cardTr.textContent = ownTr ? ownTr.label : '';
+    el.cardTr.classList.toggle('hidden', !(ownTr && card.showText && text));
+    el.translate.value = card.translate || '';
+    el.translate.disabled = !!translating;
 
     fillGrid(el.cardOwn, tweet.media.filter((m) => m.from === 'own'), card.photoLayout);
 
     const quoted = tweet.quoted;
     el.showQuoteLabel.classList.toggle('hidden', !quoted);
     el.quote.classList.toggle('hidden', !(quoted && card.showQuote));
-    if (quoted) renderQuote(el.quote, quoted, quoteItems(), card);
+    if (quoted) renderQuote(el.quote, quoted, quoteItems(), card, tr && tr.quote);
 
     const when = card.showDate ? formatDate(createdAt, true) : '';
     el.cardDate.classList.toggle('hidden', !when);
@@ -232,6 +319,12 @@
       opt.textContent = s + '× · ' + CARD_BASE_W * s + ' px wide' + (opt.disabled ? ' · images only' : '');
     });
     el.cardScale.value = String(cardScale());
+  }
+
+  // What the host draws instead of the original text; the quote part only while the quote is shown.
+  function cardTranslation() {
+    const tr = activeTranslation();
+    return tr ? { own: tr.own || undefined, quote: card.showQuote ? tr.quote || undefined : undefined } : undefined;
   }
 
   // Video cards are rendered at 2x at most (encoder size limits).
@@ -357,12 +450,18 @@
 
   function populate() {
     el.title.value = '';
+    translation = null;
+    translating = 0;
+    translateSeq++;
+    fillTranslateOptions();
+    setTranslateStatus('');
 
     fillSelect(el.fps, FPS_OPTIONS, (v) => v + ' fps', 15);
     fillSelect(el.speed, SPEED_OPTIONS, (v) => v + '×', 1);
     buildStrip();
     selectMedia(0);
     $('tw-content').classList.remove('hidden');
+    if (card.translate) loadTranslation();
   }
 
   // ------------------------------------------------------------- listeners
@@ -387,6 +486,12 @@
     card.theme = tab.dataset.theme;
     savePrefs();
     renderCardPreview();
+  });
+
+  el.translate.addEventListener('change', () => {
+    card.translate = el.translate.value;
+    savePrefs();
+    loadTranslation();
   });
 
   el.photoLayout.addEventListener('click', (e) => {
@@ -437,6 +542,7 @@
     output,
     accepts: (url) => TWEET_URL_RE.test(url),
     hint: 'Open a tweet (x.com/…/status/…) to use this tab.',
+    canDownload: () => !translating,
     loadingText: 'Loading tweet…',
     load: (url) => Promise.all([
       loadPrefs(['twKind', 'twCard']),
@@ -473,7 +579,7 @@
             start: trim.start,
             end: trim.end || null,
           },
-          card: Object.assign({}, card, { scale: cardScale() }),
+          card: Object.assign({}, card, { scale: cardScale(), translation: cardTranslation() }),
         },
       };
     },

@@ -1,10 +1,13 @@
 # nickel.tools
-based on the fork by [leoconnn](https://github.com/leconnn/youtube-dl-extension) which is forked from [youtube-dl](https://github.com/ytdl-org/youtube-dl), heavy references to the web tool [cobalt.tools](https://cobalt.meowing.de/). This is fork is for my personal use only I do not claim anything in these repositories.
+based on the fork by [leoconnn](https://github.com/leconnn/youtube-dl-extension) which is forked from [youtube-dl](https://github.com/ytdl-org/youtube-dl), heavy references to the web tool [cobalt.tools](https://cobalt.meowing.de/). This fork is for my personal use only, I do not claim anything in these repositories.
 
-![icon](browser-extension/extension/icons/icon-128.png)
+<p align="center"><img src="browser-extension/extension/icons/icon-128.png" alt="icon" width="128"></p>
 
 **[See `browser-extension/README.md` for the actual project](browser-extension/README.md):**
 what it does, how to install it, and how it works.
+
+New: tweet cards can **auto-translate** the tweet and its quoted post (pick a
+language in the card's Translate row; the card shows "Translated from ...").
 
 ## Image previews
 

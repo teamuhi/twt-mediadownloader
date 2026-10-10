@@ -5,6 +5,7 @@
 
 const HOST_NAME = 'com.nickel.nickel_tools';
 const HOST_TIMEOUT_MS = 8000;
+const TRANSLATE_TIMEOUT_MS = 30000; // two sequential web requests; also covers an old host that ignores the message
 
 let port = null;
 
@@ -207,7 +208,7 @@ function broadcast(tabUrl) {
 }
 
 function onPortMessage(msg) {
-  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'tweetResult' || msg.type === 'configResult' || msg.type === 'browseFolderResult' || msg.type === 'openPathResult' || msg.type === 'revealFileResult') {
+  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'tweetResult' || msg.type === 'translateResult' || msg.type === 'configResult' || msg.type === 'browseFolderResult' || msg.type === 'openPathResult' || msg.type === 'revealFileResult') {
     const pending = pendingRequests[msg.requestId];
     if (!pending) return;
     delete pendingRequests[msg.requestId];
@@ -310,6 +311,10 @@ browser.runtime.onMessage.addListener((message) => {
     return getXCookies()
       .then((cookies) => sendRequest({ type: 'tweet', requestId: newRequestId(), url: message.url, cookies }))
       .catch(failure);
+  }
+
+  if (message.type === 'translate') {
+    return sendRequest({ type: 'translate', requestId: newRequestId(), texts: message.texts, target: message.target }, TRANSLATE_TIMEOUT_MS).catch(failure);
   }
 
   if (message.type === 'startDownload') {
