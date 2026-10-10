@@ -21,7 +21,7 @@
     fps: $('tw-fps'), speed: $('tw-speed'), width: $('tw-width'),
     preview: $('tw-preview'), trim: $('tw-trim'), range: $('tw-range'),
     start: $('tw-start'), end: $('tw-end'), startT: $('tw-start-t'), endT: $('tw-end-t'),
-    photoOpts: $('tw-photo-opts'), photoSize: $('tw-photo-size'), cardScale: $('tw-card-scale'),
+    photoOpts: $('tw-photo-opts'), photoSize: $('tw-photo-size'), photoFormat: $('tw-photo-format'), cardScale: $('tw-card-scale'),
     cardTheme: $('tw-card-theme'), photoLayout: $('tw-photo-layout'), photoLayoutRow: $('tw-photo-layout-row'), showText: $('tw-show-text'), showDate: $('tw-show-date'), showVerified: $('tw-show-verified'),
     translate: $('tw-translate'), translateStatus: $('tw-translate-status'), translateStatusRow: $('tw-translate-status-row'), cardTr: $('card-tr'),
     showQuote: $('tw-show-quote'), showQuoteLabel: $('tw-show-quote-label'),
@@ -47,7 +47,7 @@
   const format = () => document.querySelector('input[name="twfmt"]:checked').value;
 
   function savePrefs() {
-    browser.storage.local.set({ twKind: kind, twCard: card });
+    browser.storage.local.set({ twKind: kind, twCard: card, twPhotoFormat: el.photoFormat.value });
   }
 
   // ----------------------------------------------------------- time helpers
@@ -341,7 +341,10 @@
       const many = tweet.media.filter((m) => m.type === 'photo').length > 1;
       return { label: 'PNG', ext: '.png', hint: 'Saved as a PNG image' + (many ? ' (up to 4 photos).' : '.') };
     }
-    if (!isVideo(item)) return { label: 'Image', ext: '', hint: '' };
+    if (!isVideo(item)) {
+      const photo = el.photoFormat.value;
+      return { label: photo.toUpperCase(), ext: '.' + photo, hint: 'Converted from the original photo.' };
+    }
     return format() === 'gif'
       ? { label: 'GIF', ext: '.gif', hint: 'Converted from the video.' }
       : { label: 'MP4', ext: '.mp4', hint: '' };
@@ -510,6 +513,11 @@
     });
   });
 
+  el.photoFormat.addEventListener('change', () => {
+    savePrefs();
+    render();
+  });
+
   document.querySelectorAll('input[name="twfmt"]').forEach((radio) => radio.addEventListener('change', render));
   [el.fps, el.speed, el.width].forEach((select) => select.addEventListener('change', updateGifEstimate));
 
@@ -545,11 +553,12 @@
     canDownload: () => !translating,
     loadingText: 'Loading tweet…',
     load: (url) => Promise.all([
-      loadPrefs(['twKind', 'twCard']),
+      loadPrefs(['twKind', 'twCard', 'twPhotoFormat']),
       send({ type: 'getTweet', url }),
     ]).then(([stored, info]) => {
       kind = stored.twKind === 'card' ? 'card' : 'media';
       card = Object.assign(card, stored.twCard);
+      el.photoFormat.value = ['png', 'jpg', 'webp', 'gif'].includes(stored.twPhotoFormat) ? stored.twPhotoFormat : 'png';
       // An older native host sends no quote data and doesn't tag which post a media item belongs to.
       noteOutdatedHost('twitter', !('quoted' in info));
       (info.media || []).forEach((m) => { m.from = m.from || 'own'; });
@@ -572,6 +581,7 @@
           mediaIndex: selected,
           quality,
           photoSize: el.photoSize.value || 'orig',
+          photoFormat: el.photoFormat.value,
           gif: {
             fps: Number(el.fps.value),
             speed: Number(el.speed.value),

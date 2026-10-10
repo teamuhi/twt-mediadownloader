@@ -529,6 +529,9 @@ def _num(value, default, lo, hi):
         return default
 
 
+PHOTO_FORMATS = ('png', 'jpg', 'webp', 'gif')  # image formats a downloaded tweet photo can be saved as
+
+
 def _translation(raw):
     """{'own': {...}, 'quote': {...}} of {'text', 'label'} from the popup's
     translate step; anything malformed is dropped (the card keeps the original)."""
@@ -563,6 +566,7 @@ def validate_twitter_request(url, options):
         'mediaIndex': int(_num(options.get('mediaIndex'), 0, 0, 15)),
         'quality': int(_num(options.get('quality'), 0, 0, 4320)) or None,
         'photoSize': options.get('photoSize') if options.get('photoSize') in twitter.PHOTO_SIZES else 'orig',
+        'photoFormat': options.get('photoFormat') if options.get('photoFormat') in PHOTO_FORMATS else 'png',
         'gif': {'fps': int(_num(gif.get('fps'), 15, 5, 30)), 'speed': _num(gif.get('speed'), 1.0, 0.25, 4.0),
                 'width': width, 'start': start, 'end': end},
         'card': {'theme': 'dark' if card.get('theme') == 'dark' else 'light',
@@ -666,8 +670,13 @@ def _run_twitter_job(url, options, on_progress, ffmpeg_location, tmp, cookiefile
         if item['type'] == 'photo':
             out = os.path.join(tmp, 'photo')
             twitter.download_photo(item['photoUrl'], out, options['photoSize'])
-            ext = os.path.splitext(item['photoUrl'].split('?')[0])[1].lstrip('.') or 'jpg'
-            return out, ext, base
+            import web  # late: web imports core
+            try:
+                out = web.convert_image(out, options['photoFormat'])
+                return out, os.path.splitext(out)[1].lstrip('.'), base
+            except Exception:
+                ext = os.path.splitext(item['photoUrl'].split('?')[0])[1].lstrip('.') or 'jpg'
+                return out, ext, base  # Pillow couldn't convert it: keep the original file
         video, height = _download_video(tweet, item, options['quality'], tmp, cookiefile, on_progress)
         if options['format'] == 'gif':
             g = options['gif']

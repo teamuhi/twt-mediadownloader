@@ -188,7 +188,7 @@ items shows a thumbnail strip to pick which one to download.
 
 - **Media only** saves the tweet's own file: the video as MP4 (pick a
   resolution; sizes X doesn't serve, such as 480p, are downscaled with ffmpeg
-  and marked "scaled"), a photo at Original, Large, Medium or Small size, or a
+  and marked "scaled"), a photo at Original, Large, Medium or Small size, saved as **PNG (default), JPG, WebP or GIF** (Image format row; transparency is flattened onto white for JPG), or a
   video/GIF **converted to a GIF**. For GIF you can set the frame rate, speed, resolution (width),
   and start/end points. A looping preview plays the chosen clip, and the
   **Set start** / **Set end** buttons take the preview's current time.
