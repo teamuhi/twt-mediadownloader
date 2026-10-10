@@ -51,14 +51,14 @@ def get_or_create_token():
     return token
 
 
-def run_download_job(job_id, url, mode, quality, options=None, audio=None):
+def run_download_job(job_id, url, mode, quality, options=None, audio=None, codec=None, container=None):
     def on_progress(**kwargs):
         with jobs_lock:
             jobs[job_id].update(kwargs)
     if options is not None:
         core.run_twitter_download(url, options, on_progress)
     else:
-        core.run_download(url, mode, quality, on_progress, audio=audio)
+        core.run_download(url, mode, quality, on_progress, audio=audio, codec=codec, container=container)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -181,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
         with jobs_lock:
             jobs[job_id] = {'status': 'starting', 'percent': 0}
 
-        thread = threading.Thread(target=run_download_job, args=(job_id, url, mode, quality, options, body.get('audio')), daemon=True)
+        thread = threading.Thread(target=run_download_job, args=(job_id, url, mode, quality, options, body.get('audio'), body.get('codec'), body.get('container')), daemon=True)
         thread.start()
 
         self._send_json(200, {'job_id': job_id})

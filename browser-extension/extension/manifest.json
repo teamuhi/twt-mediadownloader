@@ -5,7 +5,7 @@
   "description": "Download Twitter/X media (video, GIF, photo), tweet cards, YouTube video/audio, and images, video and audio from any website, via a native messaging host running yt-dlp.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "twtdl-extension@local",
+      "id": "nickel-tools@local",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": ["none"]

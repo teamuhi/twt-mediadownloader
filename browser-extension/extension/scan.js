@@ -83,45 +83,85 @@
     return best;
   }
 
+  // querySelectorAll that also pierces open shadow roots (web components).
+  function all(selector, root = document) {
+    const found = [...root.querySelectorAll(selector)];
+    root.querySelectorAll('*').forEach((host) => {
+      if (host.shadowRoot) found.push(...all(selector, host.shadowRoot));
+    });
+    return found;
+  }
+
+  // Lazy-loaders park the real URL in a data-* attribute while src is a placeholder.
+  const LAZY_ATTRS = ['data-src', 'data-lazy-src', 'data-original', 'data-lazy', 'data-url', 'data-hi-res-src'];
+  const LAZY_SRCSET = ['data-srcset', 'data-lazy-srcset'];
+  const attr = (el, names) => names.map((n) => el.getAttribute(n)).find(Boolean) || '';
+
+  function imageUrl(img) {
+    const real = (u) => u && !u.startsWith('data:') && !u.startsWith('blob:');
+    return bestFromSrcset(img.srcset)
+      || bestFromSrcset(attr(img, LAZY_SRCSET))
+      || [img.currentSrc, img.src].find(real)
+      || attr(img, LAZY_ATTRS);
+  }
+
+  // Manifests and blob: players can't be fetched as a file; yt-dlp handles the manifest.
+  const STREAM_RE = /\.(?:m3u8|mpd)$/i;
+  function addVideo(url, extra) {
+    const clean = (abs(url) || '').split(/[?#]/)[0];
+    add(url, STREAM_RE.test(clean) ? 'embed' : 'video', extra);
+  }
+
   document.querySelectorAll('meta[property="og:image"], meta[name="twitter:image"], meta[property="og:image:url"]')
     .forEach((m) => add(m.content, 'image'));
-  document.querySelectorAll('meta[property="og:video"], meta[property="og:video:url"]')
-    .forEach((m) => { if (!EMBED_RE.test(m.content || '')) add(m.content, 'video'); });
+  document.querySelectorAll('meta[property="og:video"], meta[property="og:video:url"], meta[property="og:video:secure_url"]')
+    .forEach((m) => { if (!EMBED_RE.test(m.content || '')) addVideo(m.content); });
 
-  document.querySelectorAll('img').forEach((img) => {
+  all('img').forEach((img) => {
     if (!shown(img)) return;
-    const dims = { w: img.naturalWidth, h: img.naturalHeight };
-    add(bestFromSrcset(img.srcset) || img.currentSrc || img.src, 'image', dims);
+    add(imageUrl(img), 'image', { w: img.naturalWidth, h: img.naturalHeight });
   });
-  document.querySelectorAll('picture source[srcset]').forEach((s) => {
+  all('picture source').forEach((s) => {
     const img = s.parentElement.querySelector('img');
-    if (!img || shown(img)) add(bestFromSrcset(s.srcset), 'image');
+    if (!img || shown(img)) add(bestFromSrcset(s.srcset) || bestFromSrcset(attr(s, LAZY_SRCSET)), 'image');
   });
 
-  document.querySelectorAll('video').forEach((v) => {
+  all('video').forEach((v) => {
     if (!shown(v)) return;
     const poster = v.poster ? abs(v.poster) || '' : '';
-    add(v.currentSrc || v.src, 'video', { poster });
-    v.querySelectorAll('source[src]').forEach((s) => add(s.src, 'video', { poster }));
+    addVideo(v.currentSrc || v.src || attr(v, LAZY_ATTRS), { poster });
+    v.querySelectorAll('source[src]').forEach((s) => addVideo(s.src, { poster }));
     if (poster) add(v.poster, 'image');
   });
-  document.querySelectorAll('audio').forEach((a) => {
+  all('audio').forEach((a) => {
     if (a.controls && !shown(a)) return;
     add(a.currentSrc || a.src, 'audio');
     a.querySelectorAll('source[src]').forEach((s) => add(s.src, 'audio'));
   });
 
-  document.querySelectorAll('a[href]').forEach((a) => {
+  all('a[href]').forEach((a) => {
     if (!shown(a)) return;
     const path = (abs(a.href) || '').split(/[?#]/)[0];
     for (const kind in MEDIA_EXT) {
       if (MEDIA_EXT[kind].test(path)) { add(a.href, kind); break; }
     }
+    if (STREAM_RE.test(path)) add(a.href, 'embed');
   });
 
-  document.querySelectorAll('iframe[src]').forEach((f) => {
+  all('iframe[src]').forEach((f) => {
     if (EMBED_RE.test(f.src) && shown(f)) add(f.src, 'embed');
   });
 
-  return { title: document.title || '', url: location.href, items };
+  // CSS background images (galleries, hero banners, many lazy-load libraries).
+  const BG_URL = /url\((['"]?)(.*?)\1\)/g;
+  all('*').slice(0, 4000).forEach((el) => {
+    const bg = getComputedStyle(el).backgroundImage;
+    if (!bg || bg === 'none' || !shown(el)) return;
+    const rect = el.getBoundingClientRect();
+    for (const m of bg.matchAll(BG_URL)) {
+      if (!m[2].startsWith('data:')) add(m[2], 'image', { w: Math.round(rect.width), h: Math.round(rect.height) });
+    }
+  });
+
+  return { title: document.title || '', url: location.href, top: window === window.top, items };
 })();

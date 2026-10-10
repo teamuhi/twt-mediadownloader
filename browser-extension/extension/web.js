@@ -173,7 +173,7 @@
     accepts: (url) => HTTP_URL_RE.test(url) && !TWEET_URL_RE.test(url),
     hint: 'Open a web page to list its images, video and audio.',
     loadingText: 'Scanning page…',
-    load: () => Promise.all([browser.storage.local.get(['webSubfolder', 'webMin', 'webConvert', 'webConvertVideo']), send({ type: 'scanPage', tabId: currentTabId })])
+    load: () => Promise.all([loadPrefs(['webSubfolder', 'webMin', 'webConvert', 'webConvertVideo']), send({ type: 'scanPage', tabId: currentTabId })])
       .then(([stored, data]) => {
         if (!data || !data.items || !data.items.length) {
           throw Object.assign(new Error('No media found on this page.'), {

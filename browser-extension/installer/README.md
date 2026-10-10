@@ -47,10 +47,10 @@ the extension in an official store" in the main README for both.
 ```
 
 `build.ps1` packages `browser-extension/extension/` into
-`twtdl-extension.xpi`, runs `pyinstaller host.spec` in `native-host/`
+`nickel-tools.xpi`, runs `pyinstaller host.spec` in `native-host/`
 to produce `dist/host/`, then compiles `setup.iss` (which bundles that xpi
 and host.exe together) into
-`browser-extension/installer/Output/twtdl-extension-setup.exe`. The
+`browser-extension/installer/Output/nickel-tools-setup.exe`. The
 `.xpi` it produces is **unsigned** -- sign it via AMO before shipping (see
 below), then re-run `.\build.ps1` (or just recompile `setup.iss` directly)
 so the installer bundles the signed copy.
@@ -58,7 +58,7 @@ so the installer bundles the signed copy.
 `build-chromium.ps1 -Pack` assembles the Chromium extension (sharing
 `popup.js`/`popup.css`/`popup.html` from `extension/` rather than
 duplicating them -- see the comments at the top of the script), packs and
-signs it into `chromium-build/twtdl-extension.crx` using the signing
+signs it into `chromium-build/nickel-tools.crx` using the signing
 key above, self-verifies the packed `.crx`'s embedded key matches the
 expected extension ID, and generates `chromium-build/update.xml`. Both of
 those, not the installer, are what get uploaded as GitHub Release assets --
@@ -69,7 +69,7 @@ Signing the Firefox `.xpi` (a separate step, needs a
 [Mozilla Add-on Developer API key](https://addons.mozilla.org/developers/addon/api/key/)):
 ```bash
 npx web-ext sign --source-dir=../extension --artifacts-dir=signed --channel=unlisted --api-key=<issuer> --api-secret=<secret>
-cp signed/*.xpi twtdl-extension.xpi
+cp signed/*.xpi nickel-tools.xpi
 ```
 
 None of `dist/`, `build/`, `vendor/ffmpeg/`, `Output/`, `signing/`,
@@ -85,7 +85,7 @@ points at the `.crx`. Both need to keep working forever at the same URL
 even as new versions ship, so both are uploaded to every release under the
 same fixed names and referenced via GitHub's "latest release" redirect
 (`.../releases/latest/download/update.xml`,
-`.../releases/latest/download/twtdl-extension.crx`) rather than a
+`.../releases/latest/download/nickel-tools.crx`) rather than a
 per-tag URL that would change every release. Every release must include
 both assets under those exact names, or the installer's already-applied
 policy stops finding updates.
@@ -96,7 +96,7 @@ Requires admin rights, all under one UAC prompt, for every browser it finds
 installed:
 
 1. Copies the bundled host (`host.exe` + `_internal/`, including ffmpeg) to
-   `Program Files\twtdl-extension\`. One copy serves every browser.
+   `Program Files\nickel-tools\`. One copy serves every browser.
 2. Writes a native messaging manifest and registers it per browser:
    `HKLM\SOFTWARE\Mozilla\NativeMessagingHosts\...` for Firefox, and the
    `...\Google\Chrome\...` / `...\Microsoft\Edge\...` /

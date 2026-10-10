@@ -295,7 +295,7 @@ def cookie_file(cookies):
     if not cookies:
         yield None
         return
-    fd, path = tempfile.mkstemp(prefix='twtdl-cookies-', suffix='.txt')
+    fd, path = tempfile.mkstemp(prefix='nickel-cookies-', suffix='.txt')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
             f.write('# Netscape HTTP Cookie File\n')

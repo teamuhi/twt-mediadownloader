@@ -11,7 +11,7 @@
 #
 # Usage:
 #   .\build-chromium.ps1            # unpacked only, for "Load unpacked" dev testing
-#   .\build-chromium.ps1 -Pack      # also produces twtdl-extension.crx + update.xml
+#   .\build-chromium.ps1 -Pack      # also produces nickel-tools.crx + update.xml
 #
 # -Pack requires a local Chrome or Edge install (used only to run
 # --pack-extension; the built .crx works in Chrome, Edge, and Brave alike)
@@ -39,8 +39,8 @@ $keyPath = Join-Path $PSScriptRoot 'signing\chromium-key.pem'
 # derived from signing/chromium-key.pem. If the key is ever regenerated,
 # update the manifest's "key" field to match (see native-host/README.md).
 $ExpectedExtensionId = 'lnpcggkomlddjkfpkbamcjkdkpnheejm'
-$UpdateManifestUrl = 'https://github.com/teamuhi/twt-mediadownloader/releases/latest/download/update.xml'
-$CrxDownloadUrl = 'https://github.com/teamuhi/twt-mediadownloader/releases/latest/download/twtdl-extension.crx'
+$UpdateManifestUrl = 'https://github.com/teamuhi/nickel-tools/releases/latest/download/update.xml'
+$CrxDownloadUrl = 'https://github.com/teamuhi/nickel-tools/releases/latest/download/nickel-tools.crx'
 
 Write-Host '--- Cleaning output directory ---'
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
@@ -96,7 +96,7 @@ if (Test-Path $chromeExe) {
   throw 'Neither Chrome nor Edge found at their default install paths -- either is needed to run --pack-extension.'
 }
 
-$crxPath = Join-Path $buildDir 'twtdl-extension.crx'
+$crxPath = Join-Path $buildDir 'nickel-tools.crx'
 if (Test-Path $crxPath) { Remove-Item $crxPath -Force }
 $producedCrx = Join-Path $buildDir 'unpacked.crx'
 if (Test-Path $producedCrx) { Remove-Item $producedCrx -Force }

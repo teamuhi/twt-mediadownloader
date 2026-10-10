@@ -16,8 +16,8 @@ supports Firefox, Chrome, Edge, and Brave.
    if open. The installer needs this for Firefox specifically (see below)
    and will prompt you to close it if you forget; closing the Chromium
    browsers first just avoids needing to restart them afterward.
-2. Download `twtdl-extension-setup.exe` from the
-   [latest release](https://github.com/teamuhi/twt-mediadownloader/releases/latest).
+2. Download `nickel-tools-setup.exe` from the
+   [latest release](https://github.com/teamuhi/nickel-tools/releases/latest).
 3. Run it. Windows will show a SmartScreen warning ("Windows protected your
    PC") because the installer isn't code-signed; click "More info", then
    "Run anyway". This is expected, not a sign of anything wrong; see
@@ -64,7 +64,7 @@ installed:
 
 - Copies the bundled program (a native Python runtime plus yt-dlp plus
   ffmpeg, packaged together so nothing separate needs installing) to
-  `Program Files\twtdl-extension\`. The same program serves every
+  `Program Files\nickel-tools\`. The same program serves every
   browser -- only how each browser is told to find it differs.
 - Registers that program as a native messaging host for each browser it
   detects, at `HKLM\SOFTWARE\Mozilla\NativeMessagingHosts\...` for Firefox,
@@ -133,20 +133,43 @@ and **Embed tags & cover art** switches tagging off.
 The filename box is pre-filled with the video's own title as gray
 placeholder text; type over it to save under a different name.
 
-Progress shows in the popup, and you get a desktop notification when it
-finishes or fails even if you've closed the popup, since a background
-script tracks the job independently. Click a finished-download notification
-to open its folder in Explorer with the file selected.
+Progress shows in the popup. If you close it, the toolbar icon keeps showing
+the export: a badge with the percentage (the number of exports when several
+run, then a check or `!`), with the title in the icon's tooltip. You also get
+a desktop notification when it starts and when it finishes or fails, since a
+background script tracks the job independently. Click a finished-download
+notification to open its folder in Explorer with the file selected.
 
-By default the finished file lands in `Downloads\twtdl-extension\` in
+By default the finished file lands in `Downloads
+ickel-tools\` in
 your user folder. Click the gear icon in the popup to set a different
-default location -- click **Browse…** to pick a folder instead of typing a
-path (a native OS folder picker, since a real filesystem path isn't
-something a web page can normally obtain). The YouTube and Twitter tabs
-each have their own location; until you set one for Twitter it simply uses
-the YouTube one. To save just one download somewhere else without changing
-either default, click the small folder icon next to the Download button
-instead (the picker opens at the active tab's folder).
+default location -- click **Browse...** to pick a folder instead of typing a
+path. This opens the normal Windows folder dialog (shown by the native host,
+since a web page can't see the filesystem; use its **Make New Folder** button
+to create one). The popup may close while the dialog has focus; the
+background script finishes the job. The YouTube,
+Twitter and Web tabs each have their own location; until you set one for
+Twitter or Web it simply uses the YouTube one. To save just one download
+somewhere else without changing any default, click the small folder icon
+next to the Download button instead. Requires native host 0.8.0 or newer
+(reinstall nickel.tools to update it); with an older host you can still type
+a path into the browser's path box and confirm it.
+
+### Settings
+
+The gear icon opens the settings:
+
+- **Save locations** per tab, each with Browse and Open buttons.
+- **YouTube**: default video format (MP4, MKV or WebM). The same choice is on
+  the YouTube tab as **Format**; WebM only offers VP9/AV1 and falls back to
+  MP4 when the video has neither.
+- **Notifications & badge**: progress on the toolbar icon, notify on start,
+  finish and failure, and show the finished file in its folder.
+- **Appearance & startup**: theme (System, Light or Dark), which tab opens
+  first, and whether your last-used options are remembered.
+- **X account**: use your x.com login for sensitive or protected tweets.
+- **History**: the last downloads (with Show), and a clear button.
+- **Maintenance**: extension, host and yt-dlp versions, and a reset button.
 
 If a file with the resulting name already exists (re-downloading the same
 video, or two videos ending up with the same name), the saved file gets

@@ -3,7 +3,7 @@
 ; Build order (see browser-extension/installer/README.md for full steps):
 ;   1. browser-extension/native-host/vendor/ffmpeg/ has ffmpeg.exe + ffprobe.exe
 ;   2. pyinstaller host.spec (from browser-extension/native-host/) -> dist/host/
-;   3. package browser-extension/extension/ into twtdl-extension.xpi (this
+;   3. package browser-extension/extension/ into nickel-tools.xpi (this
 ;      directory) -- see build.ps1
 ;   4. iscc setup.iss (from this directory)
 ;
@@ -29,11 +29,11 @@
 #define MyAppName "nickel.tools"
 #define MyAppVersion "0.7.0"
 #define MyAppPublisher "nickel.tools"
-#define MyAppURL "https://github.com/teamuhi/twt-mediadownloader"
-#define NativeHostName "com.twtdl.twtdl_extension"
-#define ExtensionId "twtdl-extension@local"
+#define MyAppURL "https://github.com/teamuhi/nickel-tools"
+#define NativeHostName "com.nickel.nickel_tools"
+#define ExtensionId "nickel-tools@local"
 #define HostDistDir "..\native-host\dist\host"
-#define XpiFile "twtdl-extension.xpi"
+#define XpiFile "nickel-tools.xpi"
 
 ; Chromium (Chrome/Edge/Brave) distribution: same host.exe as Firefox, but
 ; the extension itself is installed via each browser's own
@@ -43,7 +43,7 @@
 ; match, the "key" field in extension-chromium/manifest.json -- both come
 ; from signing/chromium-key.pem (gitignored; see native-host/README.md).
 #define ChromiumExtensionId "lnpcggkomlddjkfpkbamcjkdkpnheejm"
-#define UpdateManifestURL "https://github.com/teamuhi/twt-mediadownloader/releases/latest/download/update.xml"
+#define UpdateManifestURL "https://github.com/teamuhi/nickel-tools/releases/latest/download/update.xml"
 
 [Setup]
 AppId={{B36F1F3E-6B0C-4B8E-9B1A-9C6F6F6B6C31}
@@ -51,7 +51,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
-DefaultDirName={autopf}\twtdl-extension
+DefaultDirName={autopf}\nickel-tools
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
 ArchitecturesAllowed=x64compatible
@@ -60,7 +60,7 @@ PrivilegesRequired=admin
 Compression=lzma2/max
 SolidCompression=yes
 OutputDir=Output
-OutputBaseFilename=twtdl-extension-setup
+OutputBaseFilename=nickel-tools-setup
 WizardStyle=modern
 
 [Files]

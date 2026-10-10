@@ -1,5 +1,5 @@
 {
-  "name": "com.twtdl.twtdl_extension",
+  "name": "com.nickel.nickel_tools",
   "description": "Native host for the nickel.tools extension",
   "path": "__HOST_EXE_PATH__",
   "type": "stdio",

@@ -25,9 +25,9 @@ import errors
 import render
 import twitter
 
-DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads', 'twtdl-extension')
+DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads', 'nickel-tools')
 
-APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'twtdl-extension')
+APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'), 'nickel-tools')
 CONFIG_PATH = os.path.join(APP_DATA_DIR, 'config.json')
 TMP_DIR = os.path.join(APP_DATA_DIR, 'tmp')
 
@@ -140,6 +140,54 @@ def video_qualities_from_info(info):
             estimated_bytes = None
         qualities.append({'height': h, 'estimated_bytes': estimated_bytes})
     return qualities
+
+
+# Preferred video codec -> (label, yt-dlp regex on the stream's vcodec, container).
+# AV1/VP9 pair with Opus, which only the WebM container carries everywhere.
+VIDEO_CODECS = {
+    'h264': ('H.264', '^(avc1|h264)', 'mp4'),
+    'vp9': ('VP9', '^(vp9|vp09)', 'webm'),
+    'av1': ('AV1', '^(av01|av1)', 'webm'),
+}
+DEFAULT_VIDEO_CODEC = 'h264'
+VIDEO_CONTAINERS = ('mp4', 'mkv', 'webm')
+
+
+def _is_codec(fmt, codec):
+    return re.match(VIDEO_CODECS[codec][1], fmt.get('vcodec') or '') is not None
+
+
+def _has_opus(info):
+    return any((f.get('acodec') or '').startswith('opus') and f.get('vcodec') in (None, 'none') for f in info.get('formats') or [])
+
+
+def video_codecs_from_info(info):
+    """Codec ids (keys of VIDEO_CODECS) the page can be saved as. H.264 is
+    always offered (it falls back to whatever is best); VP9/AV1 need a stream
+    in that codec plus an Opus track to go with it."""
+    formats = info.get('formats') or []
+    has_opus = _has_opus(info)
+    return [c for c in VIDEO_CODECS
+            if c == DEFAULT_VIDEO_CODEC or (has_opus and any(_is_codec(f, c) for f in formats))]
+
+
+def _codec_available(info, codec, height):
+    """True when `info` has a `codec` stream at `height` or lower, plus Opus audio."""
+    try:
+        limit = int(height)
+    except (TypeError, ValueError):
+        return False
+    return _has_opus(info) and any(_is_codec(f, codec) and (f.get('height') or 0) and f['height'] <= limit for f in info.get('formats') or [])
+
+
+def video_format_selector(codec, height):
+    """yt-dlp format string for `codec` at up to `height`p; always ends with a
+    codec-agnostic fallback."""
+    legacy = ('bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/'
+              'bestvideo[height<={h}]+bestaudio/best[height<={h}]').format(h=height)
+    if codec == 'h264':
+        return "bv*[height<={h}][vcodec~='{r}']+ba[ext=m4a]/{legacy}".format(h=height, r=VIDEO_CODECS[codec][1], legacy=legacy)
+    return "bv*[height<={h}][vcodec~='{r}']+ba[acodec^=opus]/{legacy}".format(h=height, r=VIDEO_CODECS[codec][1], legacy=legacy)
 
 
 def best_audio_kbps(info):
@@ -275,6 +323,7 @@ def fetch_formats(url, ffmpeg_location=None):
         'thumbnail': info.get('thumbnail'),
         'duration': info.get('duration'),
         'video_qualities': video_qualities_from_info(info),
+        'video_codecs': video_codecs_from_info(info),
         'audio_formats': [dict(id=fid, **{k: f[k] for k in ('label', 'sub', 'ext', 'qualities')})
                           for fid, f in AUDIO_FORMATS.items() if render.has_encoder(f['encoder'], ffmpeg_location)],
         'meta': auto_meta(info),
@@ -344,8 +393,12 @@ def make_progress_hook(on_progress):
     return hook
 
 
-def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download_dir=None, title=None, audio=None):
+def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download_dir=None, title=None, audio=None, codec=None, container=None):
     """Downloads/converts `url` per `mode` ('mp4' or 'audio') / `quality`.
+    `codec` (a key of VIDEO_CODECS, default H.264/MP4) is the preferred video
+    codec; VP9/AV1 save as .webm unless `container` (mp4, mkv or webm) says
+    otherwise, and fall back to H.264 when unavailable. WebM only carries
+    VP9/AV1 + Opus, so H.264 into WebM falls back to MP4.
 
     Calls on_progress(**kwargs) with partial updates as the download
     proceeds (e.g. status='downloading', percent=...; status='converting';
@@ -374,17 +427,32 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
         return
 
     target_dir = ensure_download_dir(download_dir)
-    ext = AUDIO_FORMATS[audio['format']]['ext'] if audio else 'mp4'
+    codec = codec if codec in VIDEO_CODECS else DEFAULT_VIDEO_CODEC
+    warning = None
 
-    if not title:
+    container = container if container in VIDEO_CONTAINERS else None
+    webm_wanted = mode == 'mp4' and container == 'webm'
+    if webm_wanted and codec == DEFAULT_VIDEO_CODEC:
+        codec = 'vp9'  # WebM can't hold H.264; try VP9, falling back to MP4/H.264 below
+
+    # A non-default codec has to be checked against the real streams first, since
+    # it decides the container (and so the file name).
+    if not title or (mode == 'mp4' and codec != DEFAULT_VIDEO_CODEC):
         try:
             probe_opts = {'quiet': True, 'no_warnings': True, 'skip_download': True, 'noplaylist': True}
             with yt_dlp.YoutubeDL(probe_opts) as probe:
                 probed = probe.extract_info(url, download=False)
-            title = default_audio_name(auto_meta(probed)) if audio else probed.get('title') or 'video'
+            title = title or (default_audio_name(auto_meta(probed)) if audio else probed.get('title') or 'video')
         except Exception as e:
             on_progress(status='error', **errors.classify_error(e, 'youtube'))
             return
+        if mode == 'mp4' and codec != DEFAULT_VIDEO_CODEC and not _codec_available(probed, codec, quality):
+            warning = '%s is not available at this quality; saved as %s instead.' % (VIDEO_CODECS[codec][0], VIDEO_CODECS[DEFAULT_VIDEO_CODEC][0] + (' MP4' if webm_wanted else ''))
+            codec = DEFAULT_VIDEO_CODEC
+            if webm_wanted:
+                container = 'mp4'
+
+    ext = AUDIO_FORMATS[audio['format']]['ext'] if audio else (container or VIDEO_CODECS[codec][2])
 
     final_path = dedupe_path(os.path.join(target_dir, sanitize_filename(title, restricted=False) + '.' + ext))
     outtmpl = os.path.splitext(final_path)[0] + '.%(ext)s'
@@ -406,11 +474,8 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
         ydl_opts['ffmpeg_location'] = ffmpeg_location
 
     if mode == 'mp4':
-        ydl_opts['format'] = (
-            'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/'
-            'bestvideo[height<={h}]+bestaudio/best[height<={h}]'
-        ).format(h=quality)
-        ydl_opts['merge_output_format'] = 'mp4'
+        ydl_opts['format'] = video_format_selector(codec, quality)
+        ydl_opts['merge_output_format'] = ext
     else:
         pp = {'key': 'FFmpegExtractAudio', 'preferredcodec': AUDIO_FORMATS[audio['format']]['codec']}
         if audio['format'] == 'mp3':
@@ -427,8 +492,8 @@ def run_download(url, mode, quality, on_progress, ffmpeg_location=None, download
         if audio and audio['tags']:
             on_progress(status='tagging', percent=100)
             warning = _tag_audio(final_path, audio, info)
-            if warning:
-                done['warning'] = warning
+        if warning:
+            done['warning'] = warning
         on_progress(status='finished', percent=100, **done)
     except Exception as e:
         on_progress(status='error', **errors.classify_error(e, 'youtube'))

@@ -46,6 +46,25 @@ function send(message) {
   });
 }
 
+// Like send(), for requests that must be answered. An empty reply means the
+// background script doesn't know the message (a stale copy still running
+// after an update), so say that instead of letting callers crash on undefined.
+function request(message) {
+  return send(message).then((res) => {
+    if (res == null) {
+      throw new Error('No reply from the extension background. Reload the extension (or restart the browser) and try again.');
+    }
+    return res;
+  });
+}
+
+// Last-used options for a panel (storage.local), unless the user turned
+// "Remember my last-used options" off in Settings.
+async function loadPrefs(keys) {
+  const { rememberOptions } = await browser.storage.local.get('rememberOptions');
+  return rememberOptions === false ? {} : browser.storage.local.get(keys);
+}
+
 // The tab being downloaded from: the one the popup was opened on, or the one a
 // detached window was opened for (?tabId=...).
 const detachedTabId = Number(new URLSearchParams(location.search).get('tabId')) || null;
@@ -136,6 +155,9 @@ function syncActions() {
   refreshOutput();
 }
 
+const WEB_FALLBACK_CODES = ['E_UNSUPPORTED_URL', 'E_NO_MEDIA', 'E_EXTRACTOR_BROKEN', 'E_UNKNOWN'];
+const YOUTUBE_HOST_RE = /^https?:\/\/(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\//i; // keep its yt-dlp error visible
+
 function loadPanel(name) {
   const panel = panels[name];
   if (panel.state) return;
@@ -156,8 +178,9 @@ function loadPanel(name) {
       panel.state = 'error';
       panelError(name, err);
       syncActions();
-      // Not a video page: the Web tab can still list its images and files.
-      if (name === 'youtube' && err.code === 'E_UNSUPPORTED_URL' && activeTab === name && panels.web && panels.web.accepts(currentTabUrlValue)) {
+      // yt-dlp can't use this page (no video, or the site blocks/breaks its
+      // extractor): the Web tab can still list its images and files.
+      if (name === 'youtube' && WEB_FALLBACK_CODES.includes(err.code) && !YOUTUBE_HOST_RE.test(currentTabUrlValue) && activeTab === name && panels.web && panels.web.accepts(currentTabUrlValue)) {
         selectTab('web');
       }
     });
@@ -225,9 +248,10 @@ function buildPayload(type) {
   return Object.assign({ type, tabUrl: url, url, source: activeTab }, panels[activeTab].payload());
 }
 
-function startDownload() {
+// `extra` merges into the request, e.g. { downloadDir } for a one-off folder.
+function startDownload(extra) {
   renderJob({ status: 'starting', percent: 0, source: activeTab });
-  send(buildPayload('startDownload')).catch((err) => renderJob({ status: 'error', error: err.message, source: activeTab }));
+  send(Object.assign(buildPayload('startDownload'), extra)).catch((err) => renderJob({ status: 'error', error: err.message, source: activeTab }));
 }
 
 // The folder dialog steals focus, which closes the popup, so the background
@@ -243,7 +267,7 @@ function startDownloadTo() {
     });
 }
 
-downloadBtn.addEventListener('click', startDownload);
+downloadBtn.addEventListener('click', () => startDownload());
 downloadToBtn.addEventListener('click', startDownloadTo);
 
 // --------------------------------------------------------------- settings
@@ -253,7 +277,6 @@ const settingsPanel = $('settings-panel');
 const mainEl = $('main');
 const saveSettingsBtn = $('save-settings');
 const settingsStatusEl = $('settings-status');
-const useXLoginEl = $('use-x-login');
 
 // One save location per tab. `key` is the field name in the host's config
 // messages; `loaded` is the last value the host reported, so Save is only
@@ -265,8 +288,24 @@ const dirFields = {
   web: { input: $('web-dir'), browse: $('browse-web-dir'), key: 'webDownloadDir', loaded: '' },
 };
 
+// Toggles and selects in the Settings panel (`data-setting`) save straight to
+// storage.local as they change; background.js reads the notification/badge ones.
+const SETTING_DEFAULTS = {
+  showBadge: true, notifyStart: true, notifyFinish: true, notifyError: true, autoReveal: false,
+  rememberOptions: true, useXLogin: true,
+  theme: 'system', defaultTab: 'auto',
+};
+const settingInputs = [...document.querySelectorAll('[data-setting]')];
+const containerSeg = $('set-container');
+const HISTORY_SHOWN = 5;
+
 function setSettingsStatus(text) {
   settingsStatusEl.textContent = text;
+}
+
+function flashSettingsStatus(text) {
+  setSettingsStatus(text);
+  setTimeout(() => setSettingsStatus(''), 1500);
 }
 
 function isDirDirty(field) {
@@ -285,18 +324,50 @@ function applyConfig(res) {
   updateSaveButtonState();
 }
 
+function renderSettingValues(stored) {
+  settingInputs.forEach((input) => {
+    const key = input.dataset.setting;
+    const value = stored[key] != null ? stored[key] : SETTING_DEFAULTS[key];
+    if (input.type === 'checkbox') input.checked = value !== false;
+    else input.value = String(value);
+  });
+  const container = stored.defaultContainer || 'mp4';
+  containerSeg.querySelectorAll('[data-container]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.container === container)));
+}
+
+function renderHistory(history) {
+  const list = (history || []).slice(0, HISTORY_SHOWN);
+  $('history-wrap').classList.toggle('hidden', !list.length);
+  $('history-list').replaceChildren(...list.map((entry) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const title = textNode('span', 'row-text hist-title', entry.title || entry.filename || 'Saved');
+    title.title = entry.path || '';
+    const show = textNode('button', 'mini-btn mini-btn-fit', 'Show');
+    show.type = 'button';
+    show.disabled = !entry.path;
+    show.addEventListener('click', () => send({ type: 'revealFile', path: entry.path }).catch((err) => flashSettingsStatus('Error: ' + err.message)));
+    row.append(title, show);
+    return row;
+  }));
+}
+
 function loadSettings() {
   setSettingsStatus('Loading…');
-  send({ type: 'getConfig' })
+  request({ type: 'getConfig' })
     .then((res) => {
       applyConfig(res);
+      $('about-info').textContent = 'nickel.tools ' + browser.runtime.getManifest().version + ' · '
+        + (res.hostVersion ? 'host ' + res.hostVersion : 'host outdated (reinstall nickel.tools to update it)');
+      noteYtdlp(res.ytdlp);
       setSettingsStatus('');
     })
     .catch((err) => {
       setSettingsStatus('Error: ' + err.message);
     });
-  browser.storage.local.get('useXLogin').then((stored) => {
-    useXLoginEl.checked = stored.useXLogin !== false;
+  browser.storage.local.get([...Object.keys(SETTING_DEFAULTS), 'defaultContainer', 'history']).then((stored) => {
+    renderSettingValues(stored);
+    renderHistory(stored.history);
   });
 }
 
@@ -306,11 +377,10 @@ function saveSettings() {
     if (isDirDirty(field)) config[field.key] = field.input.value.trim();
   }
   setSettingsStatus('Saving…');
-  send({ type: 'setConfig', config })
+  request({ type: 'setConfig', config })
     .then((res) => {
       applyConfig(res);
-      setSettingsStatus('Saved');
-      setTimeout(() => setSettingsStatus(''), 1500);
+      flashSettingsStatus('Saved');
     })
     .catch((err) => {
       setSettingsStatus('Error: ' + err.message);
@@ -318,7 +388,22 @@ function saveSettings() {
 }
 
 Object.values(dirFields).forEach((field) => field.input.addEventListener('input', updateSaveButtonState));
-useXLoginEl.addEventListener('change', () => browser.storage.local.set({ useXLogin: useXLoginEl.checked }));
+
+settingInputs.forEach((input) => {
+  input.addEventListener('change', () => {
+    const key = input.dataset.setting;
+    let value = input.type === 'checkbox' ? input.checked : input.value;
+    browser.storage.local.set({ [key]: value });
+    if (key === 'theme') applyThemePref(value);
+  });
+});
+
+containerSeg.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-container]');
+  if (!btn) return;
+  browser.storage.local.set({ defaultContainer: btn.dataset.container });
+  containerSeg.querySelectorAll('[data-container]').forEach((b) => b.setAttribute('aria-selected', String(b === btn)));
+});
 
 // Matches --duration-base in popup.css. The settings panel and the main UI
 // are tall enough together to push the popup past the browser's max popup
@@ -349,7 +434,7 @@ Object.entries(dirFields).forEach(([name, field]) => {
   field.browse.addEventListener('click', () => {
     field.browse.disabled = true;
     setSettingsStatus('Choose a folder…');
-    send({ type: 'pickDir', source: name })
+    request({ type: 'pickDir', source: name })
       .then((res) => {
         field.browse.disabled = false;
         if (res && res.cancelled) {
@@ -357,14 +442,50 @@ Object.entries(dirFields).forEach(([name, field]) => {
           return;
         }
         applyConfig(res);
-        setSettingsStatus('Saved');
-        setTimeout(() => setSettingsStatus(''), 1500);
+        flashSettingsStatus('Saved');
       })
       .catch((err) => {
         field.browse.disabled = false;
         setSettingsStatus('Error: ' + err.message);
       });
   });
+});
+
+document.querySelectorAll('[data-open]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const field = dirFields[btn.dataset.open];
+    send({ type: 'openPath', source: btn.dataset.open, path: field.input.value.trim() })
+      .catch((err) => setSettingsStatus('Error: ' + err.message));
+  });
+});
+
+$('clear-history').addEventListener('click', () => {
+  browser.storage.local.remove('history').then(() => renderHistory([]));
+});
+
+// Two clicks, so a stray one can't wipe the settings.
+const resetBtn = $('reset-settings');
+let resetTimer = null;
+resetBtn.addEventListener('click', () => {
+  if (resetTimer === null) {
+    resetBtn.textContent = 'Click again to reset';
+    resetTimer = setTimeout(() => {
+      resetBtn.textContent = 'Reset';
+      resetTimer = null;
+    }, 4000);
+    return;
+  }
+  clearTimeout(resetTimer);
+  resetTimer = null;
+  resetBtn.textContent = 'Reset';
+  browser.storage.local.clear()
+    .then(() => send({ type: 'setConfig', config: { downloadDir: '', twitterDownloadDir: '', webDownloadDir: '' } }))
+    .then(() => {
+      applyThemePref('system');
+      loadSettings();
+      flashSettingsStatus('Settings reset');
+    })
+    .catch((err) => setSettingsStatus('Error: ' + err.message));
 });
 
 // -------------------------------------------------------------- pop-out
@@ -382,33 +503,51 @@ popoutBtn.addEventListener('click', () => {
 // ------------------------------------------------------------------ theme
 
 const themeToggleBtn = $('theme-toggle');
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
+let themePref = 'system';
+
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const isDark = theme === 'dark';
   themeToggleBtn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
 }
 
+// 'system' follows the OS (and tracks it live); 'light' / 'dark' are fixed.
+function applyThemePref(pref) {
+  themePref = pref;
+  applyTheme(pref === 'system' ? (systemDark.matches ? 'dark' : 'light') : pref);
+}
+
+systemDark.addEventListener('change', () => {
+  if (themePref === 'system') applyThemePref('system');
+});
+
 themeToggleBtn.addEventListener('click', () => {
   const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-  applyTheme(next);
+  applyThemePref(next);
+  $('set-theme').value = next;
   browser.storage.local.set({ theme: next });
 });
 
 // ------------------------------------------------------------------- init
 
-function init() {
-  browser.storage.local.get('theme').then((stored) => {
-    applyTheme(stored.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-  });
+// "Open on tab" setting; Auto opens a tweet link on the Twitter tab, anything else on YouTube.
+function startTab(url, pref) {
+  if (pref && pref !== 'auto' && panels[pref]) return pref;
+  return TWEET_URL_RE.test(url) ? 'twitter' : 'youtube';
+}
 
-  currentTab().then((tab) => {
+function init() {
+  const stored = browser.storage.local.get(['theme', 'defaultTab']);
+  stored.then((s) => applyThemePref(s.theme || 'system'));
+
+  Promise.all([stored, currentTab()]).then(([s, tab]) => {
     const url = tab.url;
     currentTabUrlValue = url;
     currentTabId = tab.id;
     send({ type: 'getJob', tabUrl: url }).then((job) => {
       if (job) lastJob = job;
-      // A tweet link opens on the Twitter tab; anything else on YouTube.
-      selectTab(TWEET_URL_RE.test(url) ? 'twitter' : 'youtube');
+      selectTab(startTab(url, s.defaultTab));
     });
   });
 }

@@ -17,7 +17,8 @@
 //     host.py persists to disk per requestId (see getJobStatus below),
 //     rather than trusting the rehydrated in-memory shape as current.
 
-const HOST_NAME = 'com.twtdl.twtdl_extension';
+const HOST_NAME = 'com.nickel.nickel_tools';
+const HOST_TIMEOUT_MS = 8000;
 
 let port = null;
 
@@ -34,7 +35,7 @@ const pendingRequests = {};
 // restart too.
 let requestIdToTabUrl = {};
 
-// tabUrl -> { requestId, title, mode, source, status, percent, filename, error, errorCode, errorHint }
+// tabUrl -> { requestId, title, mode, source, status, percent, startedAt, filename, error, errorCode, errorHint }
 let jobs = {};
 
 // notificationId -> file path, so clicking a finished-download notification
@@ -56,6 +57,7 @@ async function loadState() {
   requestIdToTabUrl = stored.requestIdToTabUrl || {};
   console.log('[bg] state rehydrated, jobs=', JSON.stringify(jobs));
   reconcileJobs();
+  updateBadge();
 }
 
 function persistState() {
@@ -113,9 +115,10 @@ function pollJobStatus(tabUrl, requestId) {
         Object.assign(jobs[tabUrl], statusFields);
         persistState();
         broadcast(tabUrl);
+        updateBadge();
         if (jobs[tabUrl].status === 'finished' || jobs[tabUrl].status === 'error') {
           stopPolling(requestId);
-          notify(jobs[tabUrl]);
+          jobDone(jobs[tabUrl]);
         }
       })
       .catch((err) => {
@@ -129,6 +132,7 @@ function pollJobStatus(tabUrl, requestId) {
           persistState();
           broadcast(tabUrl);
           stopPolling(requestId);
+          jobDone(jobs[tabUrl]);
         }
       });
   }, 1500);
@@ -152,9 +156,24 @@ function ensurePort() {
   return port;
 }
 
-function sendRequest(message) {
+// timeoutMs is for requests an older host build never answers (unknown
+// message types are silently ignored), so the popup can tell it to update.
+function sendRequest(message, timeoutMs) {
   return new Promise((resolve, reject) => {
-    pendingRequests[message.requestId] = { resolve, reject };
+    let timer = null;
+    pendingRequests[message.requestId] = {
+      resolve: (v) => { clearTimeout(timer); resolve(v); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    };
+    if (timeoutMs) {
+      timer = setTimeout(() => {
+        delete pendingRequests[message.requestId];
+        reject(Object.assign(new Error('The native host did not answer.'), {
+          code: 'E_HOST_OUTDATED',
+          hint: 'Reinstall nickel.tools to update the native host.',
+        }));
+      }, timeoutMs);
+    }
     try {
       ensurePort().postMessage(message);
     } catch (e) {
@@ -164,6 +183,14 @@ function sendRequest(message) {
   });
 }
 
+
+// User-facing toggles from the popup's Settings page (storage.local).
+const DEFAULT_SETTINGS = { showBadge: true, notifyStart: true, notifyFinish: true, notifyError: true, autoReveal: false };
+const HISTORY_MAX = 20;
+
+async function getSettings() {
+  return { ...DEFAULT_SETTINGS, ...(await chrome.storage.local.get(Object.keys(DEFAULT_SETTINGS))) };
+}
 
 // Browser's x.com login cookies, for sensitive/protected tweets. Sent to the
 // local host only for that one request; null when the user turned it off.
@@ -186,9 +213,95 @@ function failure(err) {
   return { ok: false, error: err.message, errorCode: err.code, errorHint: err.hint, errorDetail: err.detail };
 }
 
-function notify(job) {
+const isActive = (job) => job.status !== 'finished' && job.status !== 'error';
+const jobNotificationId = (job) => (job.requestId ? 'job-' + job.requestId : undefined);
+
+// chrome.notifications.create(id?, options, callback): the id is optional.
+function createNotification(id, options, callback) {
+  const args = id ? [id, options] : [options];
+  chrome.notifications.create(...args, callback);
+}
+
+const STATUS_WORDS = { starting: 'Starting', downloading: 'Downloading', converting: 'Converting', tagging: 'Writing tags', rendering: 'Rendering card' };
+const BADGE_COLORS = { active: '#111111', finished: '#346538', error: '#9f2f2d' };
+const BADGE_FLASH_MS = { finished: 5000, error: 10000 };
+const DEFAULT_TITLE = 'Download media from this page';
+
+// Toolbar badge: progress while exporting, then a short-lived check or "!".
+// This is what shows an export is running while the popup is closed. The
+// badge itself outlives a service worker restart; only the flash timer
+// doesn't, which at worst leaves a check/"!" up until the next update.
+let badgeFlash = null;
+let badgeFlashTimer = null;
+let lastBadge = '';
+
+function flashBadge(status) {
+  clearTimeout(badgeFlashTimer);
+  badgeFlash = status;
+  badgeFlashTimer = setTimeout(() => { badgeFlash = null; updateBadge(); }, BADGE_FLASH_MS[status]);
+}
+
+function clearBadgeFlash() {
+  clearTimeout(badgeFlashTimer);
+  badgeFlash = null;
+  updateBadge();
+}
+
+async function updateBadge() {
+  const { showBadge } = await getSettings();
+  const active = Object.values(jobs).filter(isActive);
+  let text = '';
+  let color = BADGE_COLORS.active;
+  let title = DEFAULT_TITLE;
+  if (showBadge && active.length) {
+    const job = active.reduce((a, b) => ((b.startedAt || 0) > (a.startedAt || 0) ? b : a));
+    const percent = Math.round(job.percent || 0);
+    text = active.length > 1 ? String(active.length) : percent + '%';
+    title = 'nickel.tools: ' + (STATUS_WORDS[job.status] || 'Exporting') + (job.title ? ' "' + job.title + '"' : '') + '… ' + percent + '%'
+      + (active.length > 1 ? ' (+' + (active.length - 1) + ' more)' : '');
+  } else if (showBadge && badgeFlash) {
+    text = badgeFlash === 'finished' ? '✓' : '!';
+    color = BADGE_COLORS[badgeFlash];
+    title = badgeFlash === 'finished' ? 'nickel.tools: export finished' : 'nickel.tools: export failed';
+  }
+  const key = text + color + title;
+  if (key === lastBadge) return;
+  lastBadge = key;
+  chrome.action.setBadgeText({ text });
+  chrome.action.setBadgeBackgroundColor({ color });
+  chrome.action.setTitle({ title });
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.showBadge) updateBadge();
+});
+
+const finishedJobs = new Set();
+
+// Everything that happens once a job ends: badge, notification, history, auto-reveal.
+async function jobDone(job) {
+  const id = job.requestId || job.title;
+  if (finishedJobs.has(id)) return;
+  finishedJobs.add(id);
   const isError = job.status === 'error';
-  chrome.notifications.create({
+  flashBadge(isError ? 'error' : 'finished');
+  updateBadge();
+
+  const settings = await getSettings();
+  if (isError ? settings.notifyError : settings.notifyFinish) notify(job, isError);
+  if (isError) return;
+
+  if (settings.autoReveal && job.path) {
+    ensurePort().postMessage({ type: 'revealFile', requestId: newRequestId(), path: job.path });
+  }
+  const { history = [] } = await chrome.storage.local.get('history');
+  history.unshift({ title: job.title || job.filename || 'Saved', filename: job.filename, path: job.path, source: job.source, at: Date.now() });
+  chrome.storage.local.set({ history: history.slice(0, HISTORY_MAX) });
+}
+
+// Same notification id as the "started" one, so the result replaces it.
+function notify(job, isError) {
+  createNotification(jobNotificationId(job), {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icons/icon-48.png'),
     title: isError ? 'Download failed' + (job.errorCode ? ' (' + job.errorCode + ')' : '') : 'Download finished',
@@ -198,6 +311,17 @@ function notify(job) {
       notificationPaths[notificationId] = job.path;
       persistState();
     }
+  });
+}
+
+async function notifyStarted(job) {
+  if (!(await getSettings()).notifyStart) return;
+  createNotification(jobNotificationId(job), {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon-48.png'),
+    title: 'Exporting…',
+    message: job.title || 'Your download has started',
+    silent: true,
   });
 }
 
@@ -219,7 +343,7 @@ function broadcast(tabUrl) {
 }
 
 function onPortMessage(msg) {
-  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'tweetResult' || msg.type === 'configResult' || msg.type === 'jobStatusResult' || msg.type === 'browseFolderResult') {
+  if (msg.type === 'pong' || msg.type === 'formatsResult' || msg.type === 'tweetResult' || msg.type === 'configResult' || msg.type === 'jobStatusResult' || msg.type === 'browseFolderResult' || msg.type === 'openPathResult' || msg.type === 'revealFileResult') {
     const pending = pendingRequests[msg.requestId];
     if (!pending) return;
     delete pendingRequests[msg.requestId];
@@ -241,8 +365,9 @@ function onPortMessage(msg) {
     Object.assign(jobs[tabUrl], msg);
     persistState();
     broadcast(tabUrl);
+    updateBadge();
     if (msg.status === 'finished' || msg.status === 'error') {
-      notify(jobs[tabUrl]);
+      jobDone(jobs[tabUrl]);
       delete requestIdToTabUrl[msg.requestId];
       persistState();
     }
@@ -263,7 +388,7 @@ function onPortDisconnect() {
       jobs[tabUrl].status = 'error';
       jobs[tabUrl].error = message;
       broadcast(tabUrl);
-      notify(jobs[tabUrl]);
+      jobDone(jobs[tabUrl]);
     }
   }
   persistState();
@@ -272,9 +397,10 @@ function onPortDisconnect() {
 // Which config field holds each tab's save location.
 const DIR_KEYS = { youtube: 'downloadDir', twitter: 'twitterDownloadDir', web: 'webDownloadDir' };
 
-// Shows the host's folder dialog; resolves to the chosen path, or null if cancelled.
-// Runs here rather than in the popup because the dialog steals focus, which
-// closes the popup before the answer arrives.
+// Shows the host's Windows folder dialog; resolves to the chosen path, or null if
+// cancelled. Runs here rather than in the popup because the dialog steals focus,
+// which closes the popup before the answer arrives. No timeout: the user may
+// take as long as they like.
 function browseFolder(source) {
   return sendRequest({ type: 'browseFolder', requestId: newRequestId(), source }).then((res) => res.path || null);
 }
@@ -292,7 +418,9 @@ async function startJob(message) {
     source: message.source || 'youtube',
     status: 'starting',
     percent: 0,
+    startedAt: Date.now(),
   };
+  notifyStarted(jobs[tabUrl]);
   try {
     const cookies = message.source === 'twitter' ? await getXCookies() : null;
     ensurePort().postMessage({ ...params, type: 'download', requestId, cookies });
@@ -300,9 +428,22 @@ async function startJob(message) {
     console.error('[bg] startJob: postMessage threw', e);
     jobs[tabUrl].status = 'error';
     jobs[tabUrl].error = e.message;
+    jobDone(jobs[tabUrl]);
   }
   persistState();
   broadcast(tabUrl);
+  updateBadge();
+}
+
+// One scan.js result per frame -> the top frame's page info plus every frame's
+// items (media is often inside an iframe), de-duplicated by URL.
+function mergeScans(results) {
+  const scans = (results || []).filter((r) => r && r.items);
+  const top = scans.find((r) => r.top) || scans[0];
+  if (!top) return null;
+  const seen = new Set();
+  const items = scans.flatMap((r) => r.items).filter((item) => !seen.has(item.url) && seen.add(item.url));
+  return { ...top, items: items.slice(0, 300) };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -349,8 +490,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'scanPage') {
-    chrome.scripting.executeScript({ target: { tabId: message.tabId }, files: ['scan.js'] })
-      .then((res) => sendResponse(res[0].result))
+    chrome.scripting.executeScript({ target: { tabId: message.tabId, allFrames: true }, files: ['scan.js'] })
+      .then((res) => sendResponse(mergeScans(res.map((r) => r.result))))
       .catch((e) => sendResponse(failure(Object.assign(new Error("This page can't be scanned."), {
         code: 'E_UNSUPPORTED_URL',
         hint: 'Reload the page, then open nickel.tools from the toolbar again.',
@@ -360,7 +501,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'getJob') {
-    stateLoaded.then(() => sendResponse(jobs[message.tabUrl] || null));
+    stateLoaded.then(() => {
+      clearBadgeFlash();
+      sendResponse(jobs[message.tabUrl] || null);
+    });
     return true;
   }
 
@@ -376,8 +520,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'browseFolder') {
-    sendRequest({ type: 'browseFolder', requestId: newRequestId(), source: message.source })
+  // Settings helpers; an old host never answers these.
+  const hostCalls = {
+    openPath: () => ({ type: 'openPath', path: message.path, source: message.source }),
+    revealFile: () => ({ type: 'revealFile', path: message.path }),
+  };
+  if (hostCalls[message.type]) {
+    sendRequest({ ...hostCalls[message.type](), requestId: newRequestId() }, HOST_TIMEOUT_MS)
       .then(sendResponse, (err) => sendResponse(failure(err)));
     return true;
   }

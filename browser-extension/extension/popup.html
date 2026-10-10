@@ -50,34 +50,118 @@
         <div class="section-label">Save locations</div>
         <label class="field-label" for="download-dir">YouTube</label>
         <div class="dir-row">
-          <div class="field"><input type="text" id="download-dir" placeholder="C:\Users\you\Downloads\twtdl-extension"></div>
+          <div class="field"><input type="text" id="download-dir" placeholder="C:\Users\you\Downloads\nickel-tools"></div>
           <button id="browse-dir" class="btn-secondary" type="button">Browse…</button>
+          <button class="btn-secondary btn-square" type="button" data-open="youtube" title="Open folder" aria-label="Open YouTube folder"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4.5a1 1 0 0 1 1-1h3.2l1.2 1.5h6.6a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg></button>
         </div>
         <label class="field-label" for="twitter-dir">X / Twitter</label>
         <div class="dir-row">
           <div class="field"><input type="text" id="twitter-dir" placeholder="Same as YouTube unless set"></div>
           <button id="browse-twitter-dir" class="btn-secondary" type="button">Browse…</button>
+          <button class="btn-secondary btn-square" type="button" data-open="twitter" title="Open folder" aria-label="Open X / Twitter folder"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4.5a1 1 0 0 1 1-1h3.2l1.2 1.5h6.6a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg></button>
         </div>
         <label class="field-label" for="web-dir">Web</label>
         <div class="dir-row">
           <div class="field"><input type="text" id="web-dir" placeholder="Same as YouTube unless set"></div>
           <button id="browse-web-dir" class="btn-secondary" type="button">Browse…</button>
+          <button class="btn-secondary btn-square" type="button" data-open="web" title="Open folder" aria-label="Open Web folder"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4.5a1 1 0 0 1 1-1h3.2l1.2 1.5h6.6a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg></button>
         </div>
         <div class="settings-row">
           <button id="save-settings" type="button" disabled>Save</button>
           <span id="settings-status"></span>
         </div>
       </div>
+
       <div class="section">
-        <div class="section-label">X account</div>
+        <div class="section-label">YouTube</div>
         <div class="group">
-          <label class="row" for="use-x-login">
-            <span class="row-text">Use my x.com login for sensitive or protected tweets</span>
-            <input type="checkbox" id="use-x-login" class="switch" checked>
+          <div class="row">
+            <span class="row-label">Default video format</span>
+            <div id="set-container" class="seg seg-sm" role="tablist" aria-label="Default video format">
+              <button type="button" role="tab" data-container="mp4" aria-selected="true">MP4</button>
+              <button type="button" role="tab" data-container="mkv" aria-selected="false">MKV</button>
+              <button type="button" role="tab" data-container="webm" aria-selected="false">WebM</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Notifications &amp; badge</div>
+        <div class="group">
+          <label class="row" for="set-showBadge">
+            <span class="row-text">Show export progress on the toolbar icon</span>
+            <input type="checkbox" id="set-showBadge" class="switch" data-setting="showBadge">
+          </label>
+          <label class="row" for="set-notifyStart">
+            <span class="row-text">Notify when an export starts</span>
+            <input type="checkbox" id="set-notifyStart" class="switch" data-setting="notifyStart">
+          </label>
+          <label class="row" for="set-notifyFinish">
+            <span class="row-text">Notify when an export finishes</span>
+            <input type="checkbox" id="set-notifyFinish" class="switch" data-setting="notifyFinish">
+          </label>
+          <label class="row" for="set-notifyError">
+            <span class="row-text">Notify when an export fails</span>
+            <input type="checkbox" id="set-notifyError" class="switch" data-setting="notifyError">
+          </label>
+          <label class="row" for="set-autoReveal">
+            <span class="row-text">Show the file in its folder when finished</span>
+            <input type="checkbox" id="set-autoReveal" class="switch" data-setting="autoReveal">
           </label>
         </div>
       </div>
-      <div id="ytdlp-info" class="hint settings-foot"></div>
+
+      <div class="section">
+        <div class="section-label">Appearance &amp; startup</div>
+        <div class="group">
+          <div class="row">
+            <span class="row-label">Theme</span>
+            <select id="set-theme" data-setting="theme" aria-label="Theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+          </div>
+          <div class="row">
+            <span class="row-label">Open on tab</span>
+            <select id="set-defaultTab" data-setting="defaultTab" aria-label="Open on tab"><option value="auto">Auto (by page)</option><option value="youtube">YouTube</option><option value="twitter">X / Twitter</option><option value="web">Web</option></select>
+          </div>
+          <label class="row" for="set-rememberOptions">
+            <span class="row-text">Remember my last-used options</span>
+            <input type="checkbox" id="set-rememberOptions" class="switch" data-setting="rememberOptions">
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">X account</div>
+        <div class="group">
+          <label class="row" for="set-useXLogin">
+            <span class="row-text">Use my x.com login for sensitive or protected tweets</span>
+            <input type="checkbox" id="set-useXLogin" class="switch" data-setting="useXLogin">
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">History</div>
+        <div id="history-wrap" class="group hidden">
+          <div class="row">
+            <span class="row-label">Recent downloads</span>
+            <button id="clear-history" class="mini-btn mini-btn-fit" type="button">Clear</button>
+          </div>
+          <div id="history-list"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Maintenance</div>
+        <div class="group">
+          <div class="row">
+            <span class="row-label">Reset all settings</span>
+            <button id="reset-settings" class="mini-btn mini-btn-fit" type="button">Reset</button>
+          </div>
+        </div>
+        <div id="about-info" class="hint settings-foot"></div>
+        <div id="ytdlp-info" class="hint"></div>
+      </div>
     </div>
 
     <div id="main">
@@ -87,8 +171,8 @@
         <div class="host-note hidden">Native host is out of date, so some features are unavailable. Reinstall nickel.tools to update it.</div>
         <div id="video-info" class="hidden">
           <div id="yt-kind" class="seg yt-kind" role="tablist" aria-label="Download type">
-            <button type="button" role="tab" data-kind="video" aria-selected="true">Video</button>
-            <button type="button" role="tab" data-kind="audio" aria-selected="false">Audio</button>
+            <button type="button" role="tab" data-kind="video" aria-selected="true"><svg class="kind-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="14" height="14" rx="2"/><path d="m16 10 6-3.5v11L16 14"/></svg>Video</button>
+            <button type="button" role="tab" data-kind="audio" aria-selected="false"><svg class="kind-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Audio</button>
           </div>
 
           <div id="yt-video">
@@ -104,6 +188,22 @@
               <div class="row">
                 <span class="row-label">Resolution</span>
                 <select id="mp4-quality" aria-label="Video resolution"></select>
+              </div>
+            </div>
+            <div class="group">
+              <div class="row">
+                <span class="row-label">Format</span>
+                <div id="yt-container" class="seg seg-sm" role="tablist" aria-label="Video format">
+                  <button type="button" role="tab" data-container="mp4" aria-selected="true">MP4</button>
+                  <button type="button" role="tab" data-container="mkv" aria-selected="false">MKV</button>
+                  <button type="button" role="tab" data-container="webm" aria-selected="false">WebM</button>
+                </div>
+              </div>
+            </div>
+            <div class="group">
+              <div class="row">
+                <span class="row-label">Preferred codec</span>
+                <select id="video-codec" aria-label="Video codec"></select>
               </div>
             </div>
           </div>
@@ -178,8 +278,6 @@
         <div class="error-box hidden"></div>
         <div class="host-note hidden">Native host is out of date, so some features are unavailable. Reinstall nickel.tools to update it.</div>
         <div id="tw-content" class="hidden">
-          <p id="tw-text" class="tw-text hidden"></p>
-
           <img id="tw-hero-img" class="hero hero-media hidden" alt="">
           <video id="tw-preview" class="hero hero-media hidden" muted playsinline controls preload="metadata"></video>
           <div id="tw-card" class="tw-card hidden" data-card-theme="light">
@@ -200,8 +298,8 @@
           <div class="section">
             <div class="section-label">Download as</div>
             <div id="tw-kind" class="seg" role="tablist" aria-label="Download type">
-              <button type="button" role="tab" data-kind="media" aria-selected="true">Media only</button>
-              <button type="button" role="tab" data-kind="card" aria-selected="false">Tweet card</button>
+              <button type="button" role="tab" data-kind="media" aria-selected="true"><svg class="kind-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>Media only</button>
+              <button type="button" role="tab" data-kind="card" aria-selected="false"><svg class="kind-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Tweet card</button>
             </div>
           </div>
 

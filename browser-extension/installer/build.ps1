@@ -18,7 +18,7 @@ $extensionDir = Join-Path $root 'extension'
 $nativeHostDir = Join-Path $root 'native-host'
 
 Write-Host '--- Packaging extension into .xpi ---'
-$xpiPath = Join-Path $installerDir 'twtdl-extension.xpi'
+$xpiPath = Join-Path $installerDir 'nickel-tools.xpi'
 if (Test-Path $xpiPath) { Remove-Item $xpiPath -Force }
 Compress-Archive -Path (Join-Path $extensionDir '*') -DestinationPath ($xpiPath -replace '\.xpi$', '.zip') -Force
 Move-Item ($xpiPath -replace '\.xpi$', '.zip') $xpiPath -Force

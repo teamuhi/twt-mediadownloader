@@ -14,7 +14,7 @@
   const PHOTO_PRESETS = [['large', 'Large', 2048], ['medium', 'Medium', 1200], ['small', 'Small', 680]]; // twimg ?name= sizes
 
   const el = {
-    text: $('tw-text'), strip: $('tw-strip'), title: $('tw-title'),
+    strip: $('tw-strip'), title: $('tw-title'),
     kind: $('tw-kind'), mediaOpts: $('tw-media-opts'), cardOpts: $('tw-card-opts'),
     formats: $('tw-formats'), quality: $('tw-quality'), gifEst: $('tw-gif-est'), gifOpts: $('tw-gif-opts'),
     fps: $('tw-fps'), speed: $('tw-speed'), width: $('tw-width'),
@@ -283,8 +283,7 @@
     if (showStill && el.heroImg.getAttribute('src') !== item.thumbnail) el.heroImg.src = item.thumbnail;
     if (!showPreview) el.preview.pause();
 
-    // Media-only mode shows no author; the card preview shows its own author and text.
-    el.text.classList.toggle('hidden', !tweet.text || kind !== 'media');
+    // Media-only mode shows no author or text; the card preview shows its own.
     if (kind === 'card') renderCardPreview();
     refreshOutput();
   }
@@ -357,7 +356,6 @@
   }
 
   function populate() {
-    el.text.textContent = tweet.text;
     el.title.value = '';
 
     fillSelect(el.fps, FPS_OPTIONS, (v) => v + ' fps', 15);
@@ -441,7 +439,7 @@
     hint: 'Open a tweet (x.com/…/status/…) to use this tab.',
     loadingText: 'Loading tweet…',
     load: (url) => Promise.all([
-      browser.storage.local.get(['twKind', 'twCard']),
+      loadPrefs(['twKind', 'twCard']),
       send({ type: 'getTweet', url }),
     ]).then(([stored, info]) => {
       kind = stored.twKind === 'card' ? 'card' : 'media';

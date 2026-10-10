@@ -513,6 +513,7 @@ label.row {
   margin-top: var(--s3);
 }
 
+.btn-primary,
 #save-settings {
   height: 32px;
   padding: 0 var(--s4);
@@ -527,14 +528,17 @@ label.row {
   transition: background-color var(--duration-base) ease, transform var(--duration-fast) ease;
 }
 
+.btn-primary:hover,
 #save-settings:hover {
   background: var(--accent-hover);
 }
 
+.btn-primary:active,
 #save-settings:active {
   transform: scale(0.96);
 }
 
+.btn-primary:disabled,
 #save-settings:disabled {
   background: var(--surface-2);
   color: var(--text-muted);
@@ -693,6 +697,11 @@ video.hero-media {
 .seg button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.seg .kind-ico {
+  flex-shrink: 0;
+  margin-right: 6px;
 }
 
 .seg-sm {
@@ -972,6 +981,7 @@ video.hero-media {
   .icon-btn:active,
   .btn-secondary:active,
   #save-settings:active,
+  .btn-primary:active,
   #download:active,
   #download-to:active,
   .seg button:active,
@@ -1057,17 +1067,6 @@ video.hero-media {
   flex-shrink: 0;
 }
 
-.tw-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  margin: 0 0 var(--s2);
-  overflow: hidden;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
 .tw-strip {
   display: flex;
   gap: 6px;
@@ -1122,7 +1121,6 @@ video.hero-media {
 /* classes above set `display`, which would otherwise beat the generic .hidden */
 .chip.hidden,
 .tw-strip.hidden,
-.tw-text.hidden,
 .media-grid.hidden,
 .q-box.hidden,
 .cover-empty.hidden,
@@ -1995,4 +1993,40 @@ video.hero-media {
     width: 22px;
     height: 22px;
   }
+}
+
+
+/* ---------------------------------------------------------------- settings extras */
+
+.btn-square {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+}
+
+.mini-btn-fit {
+  flex: none;
+  padding: 0 var(--s3);
+}
+
+.settings-foot {
+  margin-bottom: var(--s1);
+}
+
+#settings-panel > .section:last-child {
+  margin-bottom: var(--s4);
+}
+
+#history-list .row {
+  border-top: 1px solid var(--border);
+}
+
+.hist-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

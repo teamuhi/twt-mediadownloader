@@ -10,8 +10,18 @@
   const LOSSLESS_RATIO = { wav: 1, flac: 0.55, alac: 0.6 };
   const FALLBACK_BEST_KBPS = { mp3: 192, m4a: 128, opus: 128, ogg: 160 };
 
+  // Preferred video codec -> label and container (mirrors backend/core.py VIDEO_CODECS).
+  const VIDEO_CODECS = {
+    h264: { label: 'H.264 + AAC', ext: 'mp4' },
+    vp9: { label: 'VP9 + Opus', ext: 'webm' },
+    av1: { label: 'AV1 + Opus', ext: 'webm' },
+  };
+
+  const CONTAINERS = ['mp4', 'mkv', 'webm'];
+
   const el = {
-    kind: $('yt-kind'), video: $('yt-video'), audio: $('yt-audio'), thumb: $('thumb'), mp4Quality: $('mp4-quality'),
+    container: $('yt-container'),
+    kind: $('yt-kind'), video: $('yt-video'), audio: $('yt-audio'), thumb: $('thumb'), mp4Quality: $('mp4-quality'), codec: $('video-codec'),
     hero: $('yt-hero'), duration: $('yt-duration'), vTitle: $('yt-vtitle'), vChannel: $('yt-vchannel'),
     title: $('title'), ext: $('yt-ext'),
     cover: $('yt-cover'), coverEmpty: $('yt-cover-empty'), mcTitle: $('mc-title'), mcArtist: $('mc-artist'), mcAlbum: $('mc-album'), mcBadge: $('mc-badge'),
@@ -24,6 +34,8 @@
   let info = null;
   let kind = 'video';
   let prefs = { format: 'mp3', quality: 'best', tags: true, square: true };
+  let videoCodec = 'h264';
+  let container = 'mp4';
   let cover = { source: 'thumbnail', dataUrl: '' };
 
   const formats = () => info.audio_formats || [];
@@ -31,7 +43,27 @@
   const isLossy = (f) => f && f.qualities.length > 0;
 
   function savePrefs() {
-    browser.storage.local.set({ ytKind: kind, ytAudio: prefs });
+    browser.storage.local.set({ ytKind: kind, ytAudio: prefs, ytCodec: videoCodec, ytContainer: container });
+  }
+
+  // WebM only carries VP9/AV1 (+ Opus), so it narrows the codec list and is
+  // unavailable when the page offers neither. MP4/MKV take any offered codec.
+  function renderVideoOptions() {
+    const offered = info.video_codecs && info.video_codecs.length ? info.video_codecs : ['h264'];
+    const webmCodecs = offered.filter((c) => c !== 'h264' && VIDEO_CODECS[c]);
+    el.container.querySelector('[data-container="webm"]').disabled = !webmCodecs.length;
+    if (container === 'webm' && !webmCodecs.length) container = 'mp4';
+    el.container.querySelectorAll('[data-container]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.container === container)));
+
+    const codecs = (container === 'webm' ? webmCodecs : offered).filter((c) => VIDEO_CODECS[c]);
+    el.codec.replaceChildren(...codecs.map((c) => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = VIDEO_CODECS[c].label;
+      return opt;
+    }));
+    if (!codecs.includes(videoCodec)) videoCodec = codecs[0];
+    el.codec.value = videoCodec;
   }
 
   // ------------------------------------------------------------- metadata
@@ -170,6 +202,9 @@
       el.mp4Quality.appendChild(opt);
     }
 
+    // Only codecs the page actually offers (an older host sends none: H.264 only).
+    renderVideoOptions();
+
     // Without an audio-capable ffmpeg there is nothing to offer under Audio.
     const audioTab = el.kind.querySelector('[data-kind="audio"]');
     audioTab.disabled = !formats().length;
@@ -193,7 +228,9 @@
   // ------------------------------------------------------------- output
 
   function output() {
-    if (kind === 'video') return { label: 'MP4', ext: '.mp4', hint: 'Video with audio.' };
+    if (kind === 'video') {
+      return { label: container.toUpperCase(), ext: '.' + container, hint: 'Video with audio.' };
+    }
     const fmt = currentFormat();
     const bytes = !isLossy(fmt) ? estimateBytes(fmt) : null;
     const size = bytes ? '~' + formatBytes(bytes) : '';
@@ -261,6 +298,19 @@
   $('yt-cover-none').addEventListener('click', () => { cover = { source: 'none', dataUrl: '' }; render(); });
   el.coverFile.addEventListener('change', () => { loadCoverFile(el.coverFile.files[0]); el.coverFile.value = ''; });
   el.mp4Quality.addEventListener('change', refreshOutput);
+  el.codec.addEventListener('change', () => {
+    videoCodec = el.codec.value;
+    savePrefs();
+    refreshOutput();
+  });
+  el.container.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-container]');
+    if (!btn || btn.disabled || btn.dataset.container === container) return;
+    container = btn.dataset.container;
+    renderVideoOptions();
+    savePrefs();
+    refreshOutput();
+  });
 
   // ------------------------------------------------------------- registry
 
@@ -274,16 +324,23 @@
       : 'Open a web page with a video or audio to download it.'),
     loadingText: 'Loading media info…',
     load: (url) => Promise.all([
-      browser.storage.local.get(['ytKind', 'ytAudio']),
+      loadPrefs(['ytKind', 'ytAudio', 'ytCodec', 'ytContainer']),
+      browser.storage.local.get('defaultContainer'),
       send({ type: 'getFormats', url }),
-    ]).then(([stored, data]) => {
+    ]).then(([stored, defaults, data]) => {
       kind = stored.ytKind === 'audio' ? 'audio' : 'video';
+      videoCodec = VIDEO_CODECS[stored.ytCodec] ? stored.ytCodec : 'h264';
+      // Last used format; else the Settings default; a saved VP9/AV1 pick from
+      // before this option existed keeps meaning WebM.
+      container = CONTAINERS.includes(stored.ytContainer) ? stored.ytContainer
+        : VIDEO_CODECS[videoCodec].ext === 'webm' ? 'webm'
+          : CONTAINERS.includes(defaults.defaultContainer) ? defaults.defaultContainer : 'mp4';
       prefs = Object.assign(prefs, stored.ytAudio);
       populate(data);
     }),
     payload() {
       const title = el.title.value.trim() || el.title.placeholder;
-      if (kind === 'video') return { mode: 'mp4', quality: el.mp4Quality.value, title };
+      if (kind === 'video') return { mode: 'mp4', quality: el.mp4Quality.value, codec: videoCodec, container, title };
       const fmt = currentFormat();
       const quality = isLossy(fmt) ? el.aquality.value : undefined;
       const tags = el.tags.checked;
